@@ -8,13 +8,13 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .core.request_context import RequestIdMiddleware
-from .database import get_db, init_db
+from .database import async_session, get_db, init_db
 from . import memory_graph, models
 from .extraction import extract_story_elements
 from .explanation import explain_findings
@@ -130,6 +130,22 @@ async def _extract_episode_facts_into_graph(
         len(extraction.promises),
         len(extraction.secrets),
     )
+
+
+async def _extract_episode_facts_background(episode_id: int) -> None:
+    """Run extraction after the episode creation response has been returned."""
+    async with async_session() as db:
+        episode = await memory_graph.get_episode(db, episode_id)
+        if episode is None:
+            logger.warning("Skipping extraction; episode %d no longer exists", episode_id)
+            return
+
+        try:
+            await _extract_episode_facts_into_graph(db, episode, episode.raw_text)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception("Background extraction failed for episode %d", episode_id)
 
 
 async def _latest_episode_text(
@@ -424,7 +440,11 @@ async def get_episode(episode_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/v1/episodes", response_model=EpisodeResponse, status_code=201)
-async def ingest_episode(body: EpisodeCreate, db: AsyncSession = Depends(get_db)):
+async def ingest_episode(
+    body: EpisodeCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """Ingest a new episode - triggers extraction and updates the Story Memory Graph.
 
     Pipeline: raw text -> LLM extraction -> structured graph update.
@@ -448,13 +468,11 @@ async def ingest_episode(body: EpisodeCreate, db: AsyncSession = Depends(get_db)
 
     logger.info("Created episode %d: '%s' (id=%d)", body.number, body.title, episode.id)
 
-    # 2. Extract story elements via the shared memory-graph path
-    await _extract_episode_facts_into_graph(db, episode, body.raw_text)
-
     await db.commit()
 
     # Refresh to get created_at
     await db.refresh(episode)
+    background_tasks.add_task(_extract_episode_facts_background, episode.id)
     return EpisodeResponse.model_validate(episode)
 
 
@@ -651,8 +669,6 @@ async def generate_final_version(
         validation_status="pending",
     )
 
-    # Close the memory loop with the assembled version before revalidation.
-    await _rebuild_story_memory_graph(db)
     findings = await validate_episode(db, episode_id)
 
     resolved_count = _mark_unresolved_issues_resolved(
