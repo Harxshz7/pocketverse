@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, CheckCircle2, FileText, Sparkles, BookOpen } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileText, Sparkles, BookOpen, Volume2 } from 'lucide-react';
 import { Episode } from '../types';
 
 interface FinishedEpisodeViewProps {
@@ -7,6 +7,7 @@ interface FinishedEpisodeViewProps {
   seriesTitle: string;
   analysisRun?: any;
   onBackToEditor: () => void;
+  onOpenAudioStudio?: () => void;
 }
 
 export const FinishedEpisodeView: React.FC<FinishedEpisodeViewProps> = ({
@@ -14,6 +15,7 @@ export const FinishedEpisodeView: React.FC<FinishedEpisodeViewProps> = ({
   seriesTitle,
   analysisRun,
   onBackToEditor,
+  onOpenAudioStudio,
 }) => {
   const paragraphs = episode.content.split(/\n+/).filter(p => p.trim());
 
@@ -26,11 +28,18 @@ export const FinishedEpisodeView: React.FC<FinishedEpisodeViewProps> = ({
           Back to Editor
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span className="badge-pill badge-finalized">
             <span className="badge-dot" />
-            FINALIZED & PUBLISHED
+            FINALIZED & PUBLISHED TEXT
           </span>
+
+          {onOpenAudioStudio && (
+            <button className="btn btn-primary" onClick={onOpenAudioStudio} style={{ background: 'var(--bg-panel-elevated)', border: '1px solid var(--accent-red)' }}>
+              <Volume2 size={16} className="accent-text" />
+              {episode.audio_status && episode.audio_status !== 'none' ? 'Open Audio Studio' : 'Convert Finalized Episode to Audio'}
+            </button>
+          )}
         </div>
       </div>
 

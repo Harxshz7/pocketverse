@@ -44,17 +44,20 @@ export const api = {
   // Wizard Analysis Pipeline
   runContinuity: (episodeId: string) =>
     fetchJson<any>(`/episodes/${episodeId}/analysis/continuity`, { method: 'POST' }),
-  runGrammar: (episodeId: string) =>
-    fetchJson<any>(`/episodes/${episodeId}/analysis/grammar`, { method: 'POST' }),
-  runToneRemix: (episodeId: string, category: string) =>
+  runGrammar: (episodeId: string, current_content?: string) =>
+    fetchJson<any>(`/episodes/${episodeId}/analysis/grammar`, {
+      method: 'POST',
+      body: JSON.stringify({ current_content }),
+    }),
+  runToneRemix: (episodeId: string, category: string, current_content?: string) =>
     fetchJson<any>(`/episodes/${episodeId}/analysis/tone`, {
       method: 'POST',
-      body: JSON.stringify({ category }),
+      body: JSON.stringify({ category, current_content }),
     }),
   saveAndPublishText: (episodeId: string, finalContent?: string) =>
     fetchJson<any>(`/episodes/${episodeId}/analysis/save`, {
       method: 'POST',
-      body: JSON.stringify({ finalContent }),
+      body: JSON.stringify({ final_content: finalContent }),
     }),
 
   // Audio Production Pipeline
@@ -81,3 +84,14 @@ export const api = {
       { method: 'POST' }
     ),
 };
+
+// Aliases for Wizard Components compatibility
+export const runContinuityAnalysis = (episodeId: string) => api.runContinuity(episodeId);
+export const runGrammarAnalysis = (episodeId: string, current_content?: string) => api.runGrammar(episodeId, current_content);
+export const runToneRemix = (episodeId: string, category: string, current_content?: string) => api.runToneRemix(episodeId, category, current_content);
+export const saveAnalysis = (episodeId: string, finalContent: string) => api.saveAndPublishText(episodeId, finalContent);
+export const fetchEpisodeById = (id: string) => api.getEpisodeById(id);
+export const updateEpisode = (id: string, data: { title?: string; content?: string; status?: string }) => api.updateEpisode(id, data);
+export const fetchAllSeries = () => api.getAllSeries();
+export const fetchSeriesById = (id: string) => api.getSeriesById(id);
+export const createSeries = (data: { title: string; description?: string }) => api.createSeries(data);

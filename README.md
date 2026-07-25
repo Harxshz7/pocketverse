@@ -1,23 +1,43 @@
 # PocketVerse — Serialized Story AI Command Center
 
-> **PocketVerse** is an end-to-end Tech-Noir web application designed for serialized fiction authors, audio drama showrunners, and web-fiction writers. It enables creators to write, organize multi-episode series, and execute guided 4-step AI continuity and character reviews using OpenAI (`gpt-4o` & `gpt-4o-mini`) before publishing.
+> **PocketVerse** is an end-to-end Tech-Noir web application designed for serialized fiction authors, audio drama showrunners, and web-fiction writers. It enables creators to write, organize multi-episode series, execute guided 4-step AI continuity and character reviews, and produce directed audio drama episodes using OpenAI (`gpt-4o`) and ElevenLabs TTS/SFX before publishing.
 
 ---
 
 ## 📐 System Architecture & Workflow
 
-PocketVerse is built with a decoupled monorepo architecture: a React 18 single-page app on the frontend, an Express REST API backend, an embedded SQLite database, and server-side OpenAI integration.
+PocketVerse is built with a decoupled monorepo architecture: a React 18 single-page app on the frontend, an Express REST API backend, an embedded SQLite database, server-side OpenAI integration, and an ElevenLabs + `ffmpeg` Audio Production Studio.
 
 ```mermaid
 graph TD
     User["Creator / Author"] --> Frontend["React 18 SPA (Vite + TypeScript)"]
-    Frontend -->|"REST API Calls (/api)"| Backend["Express Server (Port 5000)"]
-    Backend -->|"Queries & Mutations"| SQLite[("SQLite DB (pocketverse.db)")]
-    Backend -->|"Dynamic Key Resolution"| AIService["AIService (OpenAI Prompt Engine)"]
-    AIService -->|"gpt-4o (Continuity & Tone Remix)"| OpenAI["OpenAI API"]
-    AIService -->|"gpt-4o-mini (Copyediting Pass)"| OpenAI
-    AIService -.->"Offline Fallback Parser"| Fallback["Dynamic Word Inspection Engine"]
+    Frontend -->|"1. Draft & Write Text"| TextFlow["Text Creation"]
+    TextFlow -->|"2. Run 4-Step AI Diagnostic Wizard"| Wizard["Continuity ➔ Grammar ➔ Tone Remix ➔ Finalize Text"]
+    Wizard -->|"3. Text Status: FINALIZED"| ReaderMode["Reader Mode Surface"]
+    ReaderMode -->|"4. Unlock Audio Production Studio"| AudioStudio["Audio Production Studio"]
+    AudioStudio -->|"5. LLM Performance Brief (gpt-4o)"| Direction["Voice Archetype & Ambience Bed"]
+    Direction -->|"6. Generate Master Audio (TTS + SFX + ffmpeg)"| AudioRender["Ready to Review Audio File"]
+    AudioRender -->|"7. Explicit Publish Action"| AudioPublished["Audio Status: PUBLISHED"]
 ```
+
+---
+
+## 🎬 Two-Stage Production Lifecycle
+
+### Stage 1: Text Script Creation & AI Diagnostics (Text First)
+1. **Drafting**: Creator writes or pastes an episode manuscript.
+2. **4-Step AI Diagnostic Wizard**:
+   - **Step 1 (Continuity & Hook)**: OpenAI `gpt-4o` checks plot holes, character motivations, Episode N-1 continuity, and rates the ending cliffhanger (1–10). Includes an inline drawer to edit Episode N-1.
+   - **Step 2 (Grammar & Audio Pacing)**: OpenAI `gpt-4o-mini` scans for copyediting fixes and speech cadence adjustments with 1-click accept toggles.
+   - **Step 3 (Tone / Genre Remix)**: OpenAI `gpt-4o` improvises the manuscript into **Noir, Cyberpunk, Horror, Comedy, Drama, or Sci-Fi** while strictly preserving plot beats and continuity.
+   - **Step 4 (Save & Publish Text)**: Finalizes the manuscript text and updates status to `FINALIZED`.
+
+### Stage 2: Audio Production Studio (After Text Finalization)
+Once an episode is `FINALIZED`, the **Convert to Audio / Audio Studio** engine unlocks:
+1. **Audio Direction Step (LLM Call)**: Calls OpenAI `gpt-4o` with a 20+ year veteran technical audio director persona. Reads the finalized script and tone category to produce a structured Performance Brief (`voice_id`, `voice_settings`, `pacing_notes`, `ambience_description`, `ambience_volume_db`).
+2. **Audio Generation**: Calls ElevenLabs TTS + Sound Effects API and executes a server-side `ffmpeg` filter complex to duck background ambience under narration at volume dB.
+3. **Review & Edit**: Audio status updates to `ready_to_review`. The creator can play the master audio track and edit performance brief parameters (voice, settings, ambience description, volume slider) to re-generate.
+4. **Explicit Audio Publishing**: Clicking **"Publish Audio Episode"** is an explicit, separate action (`POST /api/episodes/:id/audio/publish`) that updates status to `published` and records `published_at`. Generating audio **never** auto-publishes.
 
 ---
 
@@ -29,73 +49,16 @@ PocketVerse uses a custom-built Tech-Noir design system implemented in pure CSS 
 - **Panel Surface**: `#150F10` dark containers and `#1F1718` elevated cards with 1px subtle borders.
 - **Red Halo Glow**: Primary accent `#D91E36` with radial glows (`rgba(217, 30, 54, 0.35)`).
 - **Typography**: Google Fonts — `Archivo Black` & `Space Grotesk` for all-caps grotesk headers, `Inter` for body text.
-- **1px Status Pills**: Pill badges for episode statuses:
-  - `Draft`: Gray border (`--ink-muted`)
-  - `Analyzed`: Amber border (`#D97706`)
-  - `Finalized`: Glowing red accent (`#D91E36`)
+- **1px Status Pills**: Pill badges for episode text and audio statuses:
+  - Text Status: `Draft`, `Analyzed`, `Finalized`
+  - Audio Status: `Text Pending` (un-finalized), `No Audio`, `Generating Audio`, `Ready to Review`, `Published Audio`
 - **Custom Red-on-Black Scrollbar**: Custom `::-webkit-scrollbar` with `#5A1620` thumb, `#D91E36` glowing hover, and `#0B0708` track.
-
----
-
-## 🚀 Complete Feature Matrix
-
-### 1. Multi-Episode Series Management
-- **Series Creation Modal**: Creators can create multi-episode series with titles and descriptions.
-- **Episode Navigation Sidebar**: Episode list displaying episode numbers, titles, draft/analyzed/finalized status pill badges, and quick delete/add actions.
-- **Auto-Saving**: Script updates auto-save to backend before running the AI analysis pipeline.
-
-### 2. The 4-Step Guided AI Diagnostic Wizard
-The core value of PocketVerse is its step-by-step wizard ([WizardContainer.tsx](file:///home/chethan/Hackathon/pocketverse/frontend/src/components/Wizard/WizardContainer.tsx)) powered by a **20+ Year Veteran Storyteller Persona**:
-
-```
-[ Step 1: Continuity & Hook ] ➔ [ Step 2: Grammar Layer ] ➔ [ Step 3: Tone Remix ] ➔ [ Step 4: Save & Publish ]
-```
-
-#### Step 1: Continuity & Story-Hole Check (`gpt-4o`)
-- **Plot Hole & Character Voice Audit**: Analyzes current episode script for narrative flaws, character voice inconsistencies, and motivation gaps.
-- **Episode N-1 Cross-Referencing**: Automatically matches current episode against Episode N-1 to check for lore breaches, timeline leaps, or character knowledge errors.
-- **Ending Cliffhanger Rating (1–10)**: Evaluates ending tension. If flat, generates a master editor cliffhanger rewrite.
-- **Interactive Fixes**: Creators can click **"Accept Suggestion"** to substitute proposed fixes inline.
-- **Inline Previous Episode Editor Drawer**: Allows creators to edit and re-save Episode N-1's manuscript on the fly without leaving the wizard.
-
-#### Step 2: Copyediting & Audio Pacing Layer (`gpt-4o-mini`)
-- **Copyediting Scan**: Identifies up to 10 grammar, punctuation, dialogue cadence, and audio drama performance fixes.
-- **Single-Click Substitution**: Replaces problematic snippets directly in the manuscript.
-
-#### Step 3: Genre Improvisation & Tone Remix (`gpt-4o`)
-- **Category Picker**: Offers **Noir, Cyberpunk, Horror, Funny, Drama, Sci-Fi** styles.
-- **Side-by-Side Preview**: Displays original manuscript alongside OpenAI's genre-remixed version.
-- **Continuity & Identity Retention**: Improvise atmospheric prose while strictly preserving core plot beats and character identities.
-
-#### Step 4: Save & Publish
-- Merges all accepted continuity, grammar, and tone edits into the manuscript.
-- Updates episode status from `draft` / `analyzed` to `finalized`.
-- Unlocks Reader Mode.
-
-### 3. Bounded Script Reader Surface
-- **Reader Mode**: Formatted reader view ([FinishedEpisodeView.tsx](file:///home/chethan/Hackathon/pocketverse/frontend/src/components/FinishedEpisodeView.tsx)) displaying finalized scripts.
-- **Bounded Height & Custom Scrollbar**: Bounded to `max-height: 480px` with `overflow-y: auto` and custom red-on-black scrollbars, preventing long scripts (e.g. 1000+ words) from stretching the page.
-- **Metadata Badges**: Shows paragraph counts, word counts, finalization dates, and the **VERIFIED SCRIPT** badge.
-
-### 4. Custom Skill Persona Integration
-- Custom skill defined at [.agents/skills/storyteller_editor/SKILL.md](file:///home/chethan/Hackathon/pocketverse/.agents/skills/storyteller_editor/SKILL.md).
-- Embeds a 20+ year veteran fiction showrunner and audio drama editor persona into all OpenAI prompt requests.
 
 ---
 
 ## 🗄️ Database Schema (SQLite)
 
 Located in [schema.ts](file:///home/chethan/Hackathon/pocketverse/backend/src/db/schema.ts):
-
-### `series` Table
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | TEXT (PK) | UUID primary key |
-| `title` | TEXT | Series title |
-| `description` | TEXT | Optional description |
-| `creator_id` | TEXT | Creator identifier (`creator-default`) |
-| `created_at` | DATETIME | Timestamp |
-| `updated_at` | DATETIME | Timestamp |
 
 ### `episodes` Table
 | Column | Type | Description |
@@ -106,20 +69,22 @@ Located in [schema.ts](file:///home/chethan/Hackathon/pocketverse/backend/src/db
 | `title` | TEXT | Episode title |
 | `content` | TEXT | Episode manuscript text |
 | `status` | TEXT | `draft` \| `analyzed` \| `finalized` |
+| `audio_status` | TEXT | `none` \| `generating` \| `ready_to_review` \| `published` |
+| `published_at` | DATETIME | Audio publish timestamp |
 | `created_at` | DATETIME | Timestamp |
 | `updated_at` | DATETIME | Timestamp |
 
-### `analysis_runs` Table
+### `audio_renders` Table
 | Column | Type | Description |
 | :--- | :--- | :--- |
 | `id` | TEXT (PK) | UUID primary key |
 | `episode_id` | TEXT (FK) | References `episodes(id)` |
-| `step1_continuity`| TEXT (JSON) | Continuity findings & cliffhanger rating |
-| `step2_grammar` | TEXT (JSON) | Array of copyediting fixes |
-| `step3_tone` | TEXT (JSON) | Category, original vs remixed script |
-| `status` | TEXT | `in_progress` \| `completed` |
+| `performance_brief`| TEXT (JSON) | Directed voice settings, pacing notes, ambience bed & volume dB |
+| `voice_id` | TEXT | ElevenLabs voice ID or archetype |
+| `audio_url` | TEXT | Path to generated audio master file (`/audio/render-{id}.mp3`) |
+| `duration_seconds` | REAL | Duration in seconds |
+| `status` | TEXT | `generating` \| `ready` \| `failed` |
 | `created_at` | DATETIME | Timestamp |
-| `updated_at` | DATETIME | Timestamp |
 
 ---
 
@@ -127,91 +92,30 @@ Located in [schema.ts](file:///home/chethan/Hackathon/pocketverse/backend/src/db
 
 All endpoints run on `http://127.0.0.1:5000/api`:
 
-### Series Endpoints
-- **`GET /api/series`**: Returns all series with episode counts.
-- **`POST /api/series`**: Creates a new series (`{ title, description }`).
-- **`GET /api/series/:id`**: Returns series details with associated episodes sorted by `episode_number`.
+### Series & Episode Endpoints
+- `GET /api/series`: Fetch series list
+- `POST /api/series`: Create series
+- `GET /api/series/:id`: Fetch series with episodes
+- `POST /api/series/:seriesId/episodes`: Create episode
+- `GET /api/episodes/:id`: Fetch episode details
+- `PUT /api/episodes/:id`: Update title/content
+- `DELETE /api/episodes/:id`: Delete episode
 
-### Episode Endpoints
-- **`POST /api/series/:seriesId/episodes`**: Creates a new episode.
-- **`GET /api/episodes/:id`**: Fetches episode details and latest analysis run.
-- **`PUT /api/episodes/:id`**: Updates episode title, content, or status.
-- **`DELETE /api/episodes/:id`**: Deletes episode.
+### AI Text Diagnostic Endpoints
+- `POST /api/episodes/:id/analysis/continuity`: Step 1 Continuity check against Episode N-1
+- `POST /api/episodes/:id/analysis/grammar`: Step 2 Copyediting pass
+- `POST /api/episodes/:id/analysis/tone`: Step 3 Genre Remix (`Noir`, `Cyberpunk`, `Horror`, `Funny`, `Drama`, `Sci-Fi`)
+- `POST /api/episodes/:id/analysis/save`: Step 4 Finalize text script
 
-### Analysis Pipeline Endpoints
-- **`POST /api/episodes/:id/analysis/continuity`**: Executes Step 1 Continuity check against Episode N-1 via `gpt-4o`.
-- **`POST /api/episodes/:id/analysis/grammar`**: Executes Step 2 Copyediting check via `gpt-4o-mini`.
-- **`POST /api/episodes/:id/analysis/tone`**: Executes Step 3 Genre Remix via `gpt-4o` (`{ category: 'Noir' | 'Cyberpunk' | ... }`).
-- **`POST /api/episodes/:id/analysis/save`**: Finalizes manuscript, merges edits, sets status to `finalized`.
-
----
-
-## 🔑 Environment Variables & Security
-
-Configured in [backend/.env](file:///home/chethan/Hackathon/pocketverse/backend/.env):
-
-```env
-PORT=5000
-
-# OpenAI API Key for live gpt-4o analysis
-OPENAI_API_KEY=sk-proj-your-key-here
-```
-
-- **Dynamic Loading**: `getOpenAIClient()` in `aiService.ts` evaluates `OPENAI_API_KEY` on every request.
-- **Git Protection**: `.gitignore` excludes `.env`, `backend/.env`, `node_modules/`, `dist/`, `*.db`, and log files from version control.
+### Audio Production Endpoints
+- `POST /api/episodes/:id/audio/direction`: Generate LLM Performance Brief
+- `POST /api/episodes/:id/audio/generate`: Render master audio (TTS + SFX + ffmpeg mix) ➔ sets `audio_status` to `ready_to_review`
+- `GET /api/episodes/:id/audio`: Fetch current audio render & status
+- `POST /api/episodes/:id/audio/publish`: Explicit publish action ➔ sets `audio_status` to `published`
 
 ---
 
-## 🗺️ Codebase File Map
-
-```
-pocketverse/
-├── package.json                    # Monorepo scripts (dev, build, start)
-├── start.sh                        # Unified start script (concurrently)
-├── .gitignore                      # Git exclusion rules
-├── README.md                       # Comprehensive project blueprint
-├── .agents/skills/storyteller_editor/
-│   └── SKILL.md                    # 20+ Year Veteran Storyteller Persona definition
-├── backend/
-│   ├── .env                        # Backend environment configuration
-│   ├── .gitignore
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── src/
-│       ├── server.ts               # Express app & route wiring
-│       ├── db/schema.ts            # SQLite table initialization & DB helpers
-│       ├── services/aiService.ts   # OpenAI client (gpt-4o/gpt-4o-mini) & fallback engine
-│       └── controllers/
-│           ├── seriesController.ts
-│           ├── episodeController.ts
-│           └── analysisController.ts
-└── frontend/
-    ├── package.json
-    ├── vite.config.ts              # Port 3000 & /api proxy to 5000
-    ├── index.html
-    └── src/
-        ├── App.tsx                 # Main layout & state management
-        ├── main.tsx                # Entry point
-        ├── types/index.ts          # TypeScript domain interfaces
-        ├── api/client.ts           # REST API client
-        ├── styles/main.css         # Tech-Noir design tokens & custom scrollbars
-        └── components/
-            ├── Header.tsx          # Top navbar & creator badge
-            ├── SeriesModal.tsx     # Series creation modal
-            ├── EpisodeList.tsx     # Sidebar episode timeline with status pills
-            ├── EpisodeEditor.tsx   # Manuscript editor with auto-save
-            ├── FinishedEpisodeView.tsx # Reader view with bounded scrollbar
-            └── Wizard/
-                ├── WizardContainer.tsx # Stepper header & navigation
-                ├── Step1Continuity.tsx  # Step 1 UI & previous episode drawer
-                ├── Step2Grammar.tsx     # Step 2 Copyediting UI
-                ├── Step3ToneRemix.tsx   # Step 3 Genre adaptation preview
-                └── Step4Save.tsx        # Step 4 Finalize & persist UI
-```
-
----
-
-## ⚡ Quickstart
+## 🚀 Quickstart
 
 Run the complete stack with a single command:
 ```bash

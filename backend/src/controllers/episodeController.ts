@@ -4,7 +4,7 @@ import { dbAll, dbGet, dbRun } from '../db/schema';
 
 export async function createEpisode(req: Request, res: Response) {
   try {
-    const { id: seriesId } = req.params;
+    const seriesId = req.params.seriesId || req.params.id;
     const { title, content } = req.body;
 
     if (!title || typeof title !== 'string' || !title.trim()) {
@@ -67,9 +67,9 @@ export async function getEpisodeById(req: Request, res: Response) {
     }
 
     return res.json({
-      ...episode,
+      episode,
       series_title: series ? series.title : 'Unknown Series',
-      analysis_run: analysisRun,
+      latest_analysis: analysisRun,
     });
   } catch (err: any) {
     console.error('Error in getEpisodeById:', err);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, FileText, CheckCircle2, Volume2, Sparkles, RotateCw } from 'lucide-react';
+import { Plus, Trash2, FileText, CheckCircle2, Volume2, Sparkles, RotateCw, Lock } from 'lucide-react';
 import { Episode, AudioStatus } from '../types';
 
 interface EpisodeListProps {
@@ -19,7 +19,18 @@ export const EpisodeList: React.FC<EpisodeListProps> = ({
   onDeleteEpisode,
   onOpenAudioStudio,
 }) => {
-  const getAudioBadge = (audioStatus?: AudioStatus) => {
+  const getAudioBadge = (episode: Episode) => {
+    const isFinalized = episode.status === 'finalized';
+    const audioStatus = episode.audio_status;
+
+    if (!isFinalized) {
+      return (
+        <span className="badge-pill badge-draft" style={{ fontSize: '0.6rem', padding: '0.15rem 0.45rem', opacity: 0.7 }}>
+          <Lock size={9} /> Text Pending
+        </span>
+      );
+    }
+
     switch (audioStatus) {
       case 'generating':
         return (
@@ -49,7 +60,7 @@ export const EpisodeList: React.FC<EpisodeListProps> = ({
   };
 
   return (
-    <aside className="panel" style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '1rem', height: 'calc(100vh - 120px)', sticky: true, top: '90px' }}>
+    <aside className="panel" style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '1rem', height: 'calc(100vh - 120px)', position: 'sticky', top: '90px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <FileText className="accent-text" size={18} />
@@ -107,16 +118,22 @@ export const EpisodeList: React.FC<EpisodeListProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px solid var(--border-subtle)' }}>
-                  {getAudioBadge(episode.audio_status)}
+                  {getAudioBadge(episode)}
 
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '0.2rem 0.55rem', fontSize: '0.65rem', gap: '0.3rem' }}
-                    onClick={(e) => onOpenAudioStudio(episode, e)}
-                  >
-                    <Volume2 size={10} />
-                    {episode.audio_status === 'none' || !episode.audio_status ? 'Convert Audio' : 'Audio Studio'}
-                  </button>
+                  {isFinalized ? (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.2rem 0.55rem', fontSize: '0.65rem', gap: '0.3rem' }}
+                      onClick={(e) => onOpenAudioStudio(episode, e)}
+                    >
+                      <Volume2 size={10} />
+                      {episode.audio_status === 'none' || !episode.audio_status ? 'Convert Audio' : 'Audio Studio'}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: '0.65rem', color: 'var(--ink-dim)', fontStyle: 'italic' }}>
+                      Run AI Wizard First
+                    </span>
+                  )}
                 </div>
               </div>
             );

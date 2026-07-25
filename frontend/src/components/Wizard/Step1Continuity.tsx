@@ -53,7 +53,7 @@ export const Step1Continuity: React.FC<Step1ContinuityProps> = ({
     setSavingPrev(true);
     setPrevSavedMsg('');
     try {
-      await updateEpisode(previousEpisodeData.id, prevTitle, prevContent);
+      await updateEpisode(previousEpisodeData.id, { title: prevTitle, content: prevContent });
       setPrevSavedMsg('✓ Previous episode updated successfully! Re-running continuity check...');
       setTimeout(() => {
         setIsEditingPrevious(false);

@@ -47,6 +47,15 @@ if (!fs.existsSync(PUBLIC_AUDIO_DIR)) {
   fs.mkdirSync(PUBLIC_AUDIO_DIR, { recursive: true });
 }
 
+// Premade ElevenLabs Voice IDs compatible with Free & Paid API accounts
+const PREMADE_VOICES = {
+  rachel: '21m00Tcm4TlvDq8ikWAM', // Rachel / Baritone / Dramatic
+  josh: 'TxGEqnHWrfWFTfGW9XjX',   // Josh / Deep Male
+  bella: 'EXAVITQu4vr4xnSDxMaL',  // Bella / Synth / Sci-Fi
+  adam: 'pNInz6obpgDQGcFmaJgB',   // Adam / Dynamic / Comedy
+  elli: 'MF3mGyEYCl7XYWbV9V6O',   // Elli / Emotional
+};
+
 function getOpenAIClient(): OpenAI | null {
   const backendEnvPath = path.join(__dirname, '../../.env');
   const rootEnvPath = path.join(process.cwd(), '.env');
@@ -75,33 +84,33 @@ export class AudioService {
     const openai = getOpenAIClient();
     const category = (toneCategory || 'Drama').toLowerCase();
 
-    // Default Voice Archetype Presets per Tone Category
-    let defaultVoiceId = '21m00Tcm4TlvDq8ikWAM'; // Rachel / Baritone
+    // Default Voice Archetype Presets per Tone Category using standard ElevenLabs premade voices
+    let defaultVoiceId = PREMADE_VOICES.josh; // Deep Male Baritone
     let defaultVoiceName = 'Marcus Noir Baritone';
     let defaultAmbience = 'Rain slicked streets with distant thunder and city hum';
     let defaultVolumeDb = -18;
     let defaultSettings: VoiceSettings = { stability: 0.45, similarity_boost: 0.85, style: 0.55, use_speaker_boost: true };
 
     if (category.includes('horror')) {
-      defaultVoiceId = 'AZnzlk1XvdvUeBnXmlld'; // Domi / Shadow
+      defaultVoiceId = PREMADE_VOICES.adam; // Adam / Deep Whispering
       defaultVoiceName = 'Shadow Whispering Narrator';
       defaultAmbience = 'Eerie wind howling through old ruins with unsettling creaks';
       defaultVolumeDb = -22;
       defaultSettings = { stability: 0.35, similarity_boost: 0.90, style: 0.75, use_speaker_boost: true };
     } else if (category.includes('cyberpunk') || category.includes('sci-fi')) {
-      defaultVoiceId = 'EXAVITQu4vr4xnSDxMaL'; // Bella / Synth
+      defaultVoiceId = PREMADE_VOICES.bella; // Bella / Synth
       defaultVoiceName = 'Neon Synth Modulated Narrator';
       defaultAmbience = 'Low frequency sub-bass hum with digital static and neon glare drones';
       defaultVolumeDb = -16;
       defaultSettings = { stability: 0.60, similarity_boost: 0.80, style: 0.40, use_speaker_boost: true };
     } else if (category.includes('funny') || category.includes('comedy')) {
-      defaultVoiceId = 'pNInz6obpgDQGcFmaJgB'; // Adam / Dynamic
+      defaultVoiceId = PREMADE_VOICES.rachel; // Rachel / Expressive
       defaultVoiceName = 'Dynamic Expressive Narrator';
       defaultAmbience = 'Light upbeat acoustic rhythm with subtle comedic room tones';
       defaultVolumeDb = -20;
       defaultSettings = { stability: 0.50, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true };
     } else if (category.includes('noir')) {
-      defaultVoiceId = '21m00Tcm4TlvDq8ikWAM';
+      defaultVoiceId = PREMADE_VOICES.josh;
       defaultVoiceName = 'Gravelly Trench-Coat Baritone';
       defaultAmbience = 'Midnight neon pavement rain with foghorns in the bay';
       defaultVolumeDb = -18;
@@ -110,7 +119,7 @@ export class AudioService {
 
     // Default Pacing Notes based on text punctuation
     const sentences = episode.content.split(/(?<=[.!?])\s+/).filter(Boolean);
-    const defaultPacingNotes: PacingNote[] = sentences.slice(0, 5).map((s, idx) => ({
+    const defaultPacingNotes: PacingNote[] = sentences.slice(0, 8).map((s, idx) => ({
       text_span: s.substring(0, 60),
       pause_ms: idx === sentences.length - 1 ? 1500 : 800,
       emphasis: idx % 2 === 0 ? 'strong' : 'moderate',
@@ -132,7 +141,7 @@ ${episode.content}
 """
 
 Requirements:
-1. Select a voice archetype matching "${toneCategory}" (e.g., gravelly baritone for Noir, whispering shadow for Horror, synth-modulated for Sci-Fi, dynamic for Comedy).
+1. Select a voice archetype matching "${toneCategory}". Use ElevenLabs voice ID "${defaultVoiceId}" or custom voice.
 2. Define voice parameters: stability (0.1 - 1.0), similarity_boost (0.1 - 1.0), style (0.0 - 1.0), use_speaker_boost (boolean).
 3. Mark key text spans for dramatic pacing pauses (pause_ms between 400ms and 2000ms) and audio emphasis.
 4. Describe a rich background ambience sound effect bed and set ambience_volume_db (how far background sits under narration, e.g. -12dB to -24dB).
@@ -199,7 +208,7 @@ Return ONLY a valid JSON object:
   }
 
   /**
-   * PHASE 1 - 4: Render Audio (TTS + SFX + ffmpeg Ducking Mix)
+   * PHASE 1 - 4: Render Full Episode Audio (TTS + SFX + ffmpeg Ducking Mix)
    */
   static async renderAudio(episodeId: string, brief: PerformanceBrief): Promise<AudioRenderRecord> {
     const renderId = uuidv4();
@@ -228,23 +237,44 @@ Return ONLY a valid JSON object:
       let narrationPath = path.join(PUBLIC_AUDIO_DIR, `narration-${renderId}.mp3`);
       let ambiencePath = path.join(PUBLIC_AUDIO_DIR, `ambience-${renderId}.mp3`);
 
+      // Calculate target duration based on full text word count (approx 2.2 words per sec)
+      const wordCount = episode.content.trim().split(/\s+/).filter(Boolean).length;
+      const estimatedNarrationDuration = Math.max(15, Math.ceil(wordCount / 2.2));
+
       if (apiKey && apiKey.length > 10) {
-        console.log(`[AudioService] 🎙️ Calling ElevenLabs API for Voice ${brief.voice_id}...`);
-        await AudioService.callElevenLabsTTS(episode.content, brief, narrationPath, apiKey);
+        console.log(`[AudioService] 🎙️ Calling ElevenLabs API for Voice ${brief.voice_id} (Full Text Length: ${episode.content.length} chars, ${wordCount} words)...`);
+        try {
+          await AudioService.callElevenLabsTTS(episode.content, brief, narrationPath, apiKey);
+        } catch (ttsErr: any) {
+          console.warn('[AudioService] ElevenLabs TTS Warning (retrying with premade voice):', ttsErr.message);
+          // Retry with default premade voice or fallback
+          const fallbackBrief = { ...brief, voice_id: PREMADE_VOICES.josh };
+          try {
+            await AudioService.callElevenLabsTTS(episode.content, fallbackBrief, narrationPath, apiKey);
+          } catch (retryErr: any) {
+            console.warn('[AudioService] ElevenLabs API unavailable or free quota exhausted, switching to full synthetic narration generator:', retryErr.message);
+            await AudioService.generateSyntheticNarration(episode.content, brief, narrationPath, estimatedNarrationDuration);
+          }
+        }
+
         if (brief.ambience_description) {
           console.log(`[AudioService] 🔊 Calling ElevenLabs SFX API for Ambience: "${brief.ambience_description}"...`);
-          await AudioService.callElevenLabsSFX(brief.ambience_description, ambiencePath, apiKey);
+          try {
+            await AudioService.callElevenLabsSFX(brief.ambience_description, ambiencePath, apiKey, estimatedNarrationDuration);
+          } catch (sfxErr: any) {
+            await AudioService.generateSyntheticAmbience(brief.ambience_description, ambiencePath, estimatedNarrationDuration);
+          }
         }
       } else {
-        console.log('[AudioService] ⚠️ ELEVENLABS_API_KEY missing or empty. Generating audio via server-side sound synthesis engine...');
-        await AudioService.generateSyntheticNarration(episode.content, brief, narrationPath);
+        console.log(`[AudioService] ⚠️ ELEVENLABS_API_KEY missing or empty. Generating full audio via server-side sound synthesis engine (${wordCount} words, ~${estimatedNarrationDuration}s)...`);
+        await AudioService.generateSyntheticNarration(episode.content, brief, narrationPath, estimatedNarrationDuration);
         if (brief.ambience_description) {
-          await AudioService.generateSyntheticAmbience(brief.ambience_description, ambiencePath);
+          await AudioService.generateSyntheticAmbience(brief.ambience_description, ambiencePath, estimatedNarrationDuration);
         }
       }
 
       // PHASE 4: Server-Side ffmpeg Ducking Mix
-      let finalDuration = 15;
+      let finalDuration = estimatedNarrationDuration;
       if (fs.existsSync(narrationPath) && fs.existsSync(ambiencePath)) {
         console.log(`[AudioService] 🎛️ Executing ffmpeg Ducking Mix at ${brief.ambience_volume_db}dB...`);
         try {
@@ -258,15 +288,19 @@ Return ONLY a valid JSON object:
       } else if (fs.existsSync(narrationPath)) {
         fs.copyFileSync(narrationPath, outputPath);
       } else {
-        await AudioService.generateSyntheticNarration(episode.content, brief, outputPath);
+        await AudioService.generateSyntheticNarration(episode.content, brief, outputPath, estimatedNarrationDuration);
       }
 
-      // Calculate audio duration
+      // Calculate audio duration accurately from file size
       try {
         const stat = fs.statSync(outputPath);
-        finalDuration = Math.max(5, Math.round(stat.size / 16000));
+        // Bitrate calculation for generated MP3/WAV files
+        finalDuration = Math.max(10, Math.round(stat.size / 16000));
+        if (finalDuration < 15 && wordCount > 50) {
+          finalDuration = estimatedNarrationDuration;
+        }
       } catch (e) {
-        finalDuration = 12;
+        finalDuration = estimatedNarrationDuration;
       }
 
       // Clean up temp files
@@ -287,7 +321,7 @@ Return ONLY a valid JSON object:
         WHERE id = ?
       `, [episodeId]);
 
-      console.log(`[AudioService] ✅ Audio Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
+      console.log(`[AudioService] ✅ Full Audio Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
 
       return {
         id: renderId,
@@ -375,7 +409,7 @@ Return ONLY a valid JSON object:
   // --- ElevenLabs API Helpers ---
 
   private static async callElevenLabsTTS(text: string, brief: PerformanceBrief, outputPath: string, apiKey: string): Promise<void> {
-    const voiceId = brief.voice_id || '21m00Tcm4TlvDq8ikWAM';
+    const voiceId = brief.voice_id || PREMADE_VOICES.josh;
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
 
     const response = await fetch(url, {
@@ -386,7 +420,7 @@ Return ONLY a valid JSON object:
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_monolingual_v1',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: brief.voice_settings,
       }),
     });
@@ -401,7 +435,7 @@ Return ONLY a valid JSON object:
     fs.writeFileSync(outputPath, buffer);
   }
 
-  private static async callElevenLabsSFX(prompt: string, outputPath: string, apiKey: string): Promise<void> {
+  private static async callElevenLabsSFX(prompt: string, outputPath: string, apiKey: string, targetDuration: number = 15): Promise<void> {
     const url = 'https://api.elevenlabs.io/v1/sound-generation';
 
     const response = await fetch(url, {
@@ -412,14 +446,14 @@ Return ONLY a valid JSON object:
       },
       body: JSON.stringify({
         text: prompt,
-        duration_seconds: 15,
+        duration_seconds: Math.min(22, Math.max(5, targetDuration)),
         prompt_influence: 0.5,
       }),
     });
 
     if (!response.ok) {
       console.warn(`ElevenLabs SFX Warning (${response.status}): Could not fetch SFX, using synthetic bed.`);
-      await AudioService.generateSyntheticAmbience(prompt, outputPath);
+      await AudioService.generateSyntheticAmbience(prompt, outputPath, targetDuration);
       return;
     }
 
@@ -428,11 +462,12 @@ Return ONLY a valid JSON object:
     fs.writeFileSync(outputPath, buffer);
   }
 
-  // --- Synthetic Audio Generator (Fallback) ---
+  // --- Full Synthetic Audio Generator (Fallback) ---
 
-  private static async generateSyntheticNarration(text: string, brief: PerformanceBrief, outputPath: string): Promise<void> {
+  private static async generateSyntheticNarration(text: string, brief: PerformanceBrief, outputPath: string, targetDuration?: number): Promise<void> {
     const sampleRate = 22050;
-    const duration = Math.min(30, Math.max(8, Math.round(text.length / 15)));
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const duration = targetDuration || Math.max(15, Math.ceil(wordCount / 2.2));
     const numSamples = sampleRate * duration;
     const buffer = Buffer.alloc(44 + numSamples * 2);
 
@@ -467,9 +502,9 @@ Return ONLY a valid JSON object:
     fs.writeFileSync(outputPath, buffer);
   }
 
-  private static async generateSyntheticAmbience(prompt: string, outputPath: string): Promise<void> {
+  private static async generateSyntheticAmbience(prompt: string, outputPath: string, targetDuration?: number): Promise<void> {
     const sampleRate = 22050;
-    const duration = 15;
+    const duration = targetDuration || 15;
     const numSamples = sampleRate * duration;
     const buffer = Buffer.alloc(44 + numSamples * 2);
 

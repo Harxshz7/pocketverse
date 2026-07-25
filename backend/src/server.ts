@@ -5,15 +5,15 @@ import dotenv from 'dotenv';
 import { initDb } from './db/schema';
 
 // Import Controllers
-import { SeriesController } from './controllers/seriesController';
-import { EpisodeController } from './controllers/episodeController';
-import { AnalysisController } from './controllers/analysisController';
+import * as SeriesController from './controllers/seriesController';
+import * as EpisodeController from './controllers/episodeController';
+import * as AnalysisController from './controllers/analysisController';
 import { AudioController } from './controllers/audioController';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = parseInt(process.env.PORT || '5000', 10);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -38,8 +38,8 @@ app.delete('/api/episodes/:id', EpisodeController.deleteEpisode);
 // 3. Analysis Pipeline Routes
 app.post('/api/episodes/:id/analysis/continuity', AnalysisController.runContinuity);
 app.post('/api/episodes/:id/analysis/grammar', AnalysisController.runGrammar);
-app.post('/api/episodes/:id/analysis/tone', AnalysisController.runTone);
-app.post('/api/episodes/:id/analysis/save', AnalysisController.saveAndPublish);
+app.post('/api/episodes/:id/analysis/tone', AnalysisController.runToneRemix);
+app.post('/api/episodes/:id/analysis/save', AnalysisController.saveAnalysis);
 
 // 4. Audio Production Pipeline Routes
 app.post('/api/episodes/:id/audio/direction', AudioController.getDirection);
@@ -55,7 +55,7 @@ app.get('/api/health', (req, res) => {
 // Initialize DB and start server
 initDb()
   .then(() => {
-    app.listen(PORT, '0.0.0.0' as any, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`⚡ PocketVerse Backend Server running on http://127.0.0.1:${PORT}`);
     });
   })

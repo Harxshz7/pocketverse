@@ -91,9 +91,9 @@ export function App() {
     }
   };
 
-  const handleCreateSeries = async (data: { title: string; description?: string }) => {
+  const handleCreateSeries = async (title: string) => {
     try {
-      const newSeries = await api.createSeries(data);
+      const newSeries = await api.createSeries({ title });
       await loadSeriesList();
       setSelectedSeriesId(newSeries.id);
       setIsSeriesModalOpen(false);
@@ -132,25 +132,11 @@ export function App() {
     }
   };
 
-  const handleUpdateScript = (newContent: string) => {
-    if (currentEpisode) {
-      setCurrentEpisode({ ...currentEpisode, content: newContent });
-    }
-  };
-
-  const handleUpdateTitle = (newTitle: string) => {
-    if (currentEpisode) {
-      setCurrentEpisode({ ...currentEpisode, title: newTitle });
-    }
-  };
-
-  const handleSaveDraft = async () => {
+  const handleSaveEpisodeContent = async (title: string, content: string) => {
     if (!currentEpisode) return;
     try {
-      await api.updateEpisode(currentEpisode.id, {
-        title: currentEpisode.title,
-        content: currentEpisode.content,
-      });
+      await api.updateEpisode(currentEpisode.id, { title, content });
+      setCurrentEpisode({ ...currentEpisode, title, content });
       if (selectedSeriesId) {
         await loadSeriesDetails(selectedSeriesId);
       }
@@ -159,16 +145,13 @@ export function App() {
     }
   };
 
-  const handleLaunchWizard = async (step: number = 1) => {
-    if (currentEpisode) {
-      await handleSaveDraft();
-      setWizardStartStep(step);
-      setIsWizardOpen(true);
-    }
+  const handleLaunchWizard = (step: number = 1) => {
+    setWizardStartStep(step);
+    setIsWizardOpen(true);
   };
 
-  const handleOpenAudioStudio = (ep: Episode, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleOpenAudioStudio = (ep: Episode, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setAudioTargetEpisode(ep);
     setIsAudioStudioOpen(true);
   };
@@ -187,8 +170,8 @@ export function App() {
     <div className="app-container">
       <Header
         seriesList={seriesList}
-        selectedSeriesId={selectedSeriesId}
-        onSelectSeries={setSelectedSeriesId}
+        selectedSeries={seriesData}
+        onSelectSeries={(series: Series) => setSelectedSeriesId(series.id)}
         onOpenNewSeriesModal={() => setIsSeriesModalOpen(true)}
       />
 
@@ -233,7 +216,6 @@ export function App() {
           ) : isWizardOpen ? (
             <WizardContainer
               episode={currentEpisode}
-              allEpisodes={seriesData?.episodes || []}
               initialStep={wizardStartStep}
               onClose={() => setIsWizardOpen(false)}
               onComplete={handleWizardComplete}
@@ -244,26 +226,25 @@ export function App() {
               seriesTitle={seriesData?.title || 'Series'}
               analysisRun={latestAnalysis}
               onBackToEditor={() => setIsWizardOpen(true)}
+              onOpenAudioStudio={() => handleOpenAudioStudio(currentEpisode)}
             />
           ) : (
             <EpisodeEditor
               episode={currentEpisode}
-              onUpdateTitle={handleUpdateTitle}
-              onUpdateScript={handleUpdateScript}
-              onSaveDraft={handleSaveDraft}
-              onLaunchWizard={handleLaunchWizard}
+              onSaveContent={handleSaveEpisodeContent}
+              onLaunchWizard={() => handleLaunchWizard(1)}
+              onViewFinalized={() => setIsWizardOpen(false)}
             />
           )}
         </div>
       </div>
 
       {/* Series Modal */}
-      {isSeriesModalOpen && (
-        <SeriesModal
-          onClose={() => setIsSeriesModalOpen(false)}
-          onCreate={handleCreateSeries}
-        />
-      )}
+      <SeriesModal
+        isOpen={isSeriesModalOpen}
+        onClose={() => setIsSeriesModalOpen(false)}
+        onCreateSeries={handleCreateSeries}
+      />
 
       {/* Audio Studio Modal */}
       {isAudioStudioOpen && audioTargetEpisode && (

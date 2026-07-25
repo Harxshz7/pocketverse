@@ -9,16 +9,18 @@ import { runContinuityAnalysis, runGrammarAnalysis, runToneRemix, saveAnalysis }
 
 interface WizardContainerProps {
   episode: Episode;
+  initialStep?: number;
   onClose: () => void;
-  onFinished: (updatedEpisode: Episode) => void;
+  onComplete: () => Promise<void>;
 }
 
 export const WizardContainer: React.FC<WizardContainerProps> = ({
   episode,
+  initialStep = 1,
   onClose,
-  onFinished,
+  onComplete,
 }) => {
-  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [currentStep, setCurrentStep] = useState<number>(initialStep);
   const [workingContent, setWorkingContent] = useState<string>(episode.content);
   
   // Pipeline State
@@ -90,8 +92,8 @@ export const WizardContainer: React.FC<WizardContainerProps> = ({
     setLoading(true);
     setError('');
     try {
-      const res = await saveAnalysis(episode.id, finalContent);
-      onFinished(res.episode);
+      await saveAnalysis(episode.id, finalContent);
+      await onComplete();
     } catch (err: any) {
       setError(err.message || 'Failed to finalize and save episode.');
     } finally {
