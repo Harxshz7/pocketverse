@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { GrammarIssue } from '../../types';
 import { Check, ArrowRight, FileCheck, SpellCheck, RefreshCw } from 'lucide-react';
 
+import { AgenticTelemetryHud } from '../AgenticTelemetryHud';
+
 interface Step2GrammarProps {
   loading: boolean;
   grammarIssues: GrammarIssue[];
@@ -46,23 +48,12 @@ export const Step2Grammar: React.FC<Step2GrammarProps> = ({
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-        <div style={{
-          width: '50px',
-          height: '50px',
-          borderRadius: '50%',
-          border: '3px solid var(--border-accent)',
-          borderTopColor: 'var(--accent-red)',
-          animation: 'spin 1s infinite linear',
-          margin: '0 auto 1.5rem',
-        }} />
-        <h3 className="heading-grotesk" style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>
-          SCANNING GRAMMAR & AUDIO PACING LAYER...
-        </h3>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>
-          Surfacing up to 10 copyediting suggestions and active phrasing optimizations.
-        </p>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      <div style={{ padding: '1rem 0' }}>
+        <AgenticTelemetryHud
+          jobId="grammar-job"
+          title="OPENAI GPT-4O-MINI DIALOGUE & PACING COPYEDIT PASS"
+          defaultSubstep="GPT-4o-mini"
+        />
       </div>
     );
   }

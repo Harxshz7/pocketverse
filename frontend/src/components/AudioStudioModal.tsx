@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Volume2, Play, Pause, RotateCw, CheckCircle2, Sliders, Music, ShieldCheck, Sparkles, X, ChevronDown, ChevronUp, MapPin, Disc, Wind, UserCheck } from 'lucide-react';
 import { Episode, PerformanceBrief, AudioRender, SoundCue } from '../types';
 import { api } from '../api/client';
+import { AgenticTelemetryHud } from './AgenticTelemetryHud';
 
 interface AudioStudioModalProps {
   episode: Episode;
@@ -368,6 +369,14 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
 
         {/* Body Container */}
         <div style={{ padding: '1.75rem', maxHeight: '72vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {generating && (
+            <AgenticTelemetryHud
+              jobId={episode.id}
+              title="HIGH-SPEED OPENAI MALE AUDIO SYNTHESIS & SOUNDSCAPE ENGINE"
+              defaultSubstep="OpenAI Onyx + ffmpeg"
+            />
+          )}
+
           {error && (
             <div style={{
               background: 'rgba(217, 30, 54, 0.15)',

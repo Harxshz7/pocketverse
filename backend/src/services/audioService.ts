@@ -8,6 +8,7 @@ import OpenAI from 'openai';
 import { getAllAudioBase64 } from 'google-tts-api';
 import ffmpegPath from 'ffmpeg-static';
 import { dbGet, dbRun } from '../db/schema';
+import { progressService } from './progressService';
 
 const execAsync = promisify(exec);
 
@@ -100,9 +101,13 @@ export class AudioService {
    * PHASE 2: Generate Audio Performance Brief & Foley Soundscape Cues using Technical Audio Director Persona
    */
   static async generatePerformanceBrief(episode: { id: string; title: string; content: string }, toneCategory: string): Promise<PerformanceBrief> {
+    const jobId = episode.id;
     const openai = getOpenAIClient();
     const voiceSelection = AudioService.selectBestMaleOpenAIVoice(toneCategory);
     const category = (toneCategory || 'Drama').toLowerCase();
+
+    progressService.resetProgress(jobId);
+    progressService.updateProgress(jobId, 15, '🎧 Generating Foley Soundscape Cues & Audio Brief...', `[AudioService] 🎧 Analyzing soundscape cues for "${episode.title}" (${toneCategory})...`, 'GPT-4o');
 
     let defaultAmbience = 'Natural wind breeze whispering through dark trees with subtle ambient warmth';
     let defaultVolumeDb = -18;
@@ -160,7 +165,6 @@ export class AudioService {
       };
     });
 
-    // Default Pacing Notes based on text punctuation
     const sentences = episode.content.split(/(?<=[.!?])\s+/).filter(Boolean);
     const defaultPacingNotes: PacingNote[] = sentences.slice(0, 8).map((s, idx) => ({
       text_span: s.substring(0, 60),
@@ -202,6 +206,8 @@ Return JSON:
         });
 
         const parsed = JSON.parse(response.choices[0].message.content || '{}');
+        progressService.updateProgress(jobId, 30, '🎧 Audio Performance Brief Prepared', `[AudioService] Voice selected: ${parsed.voice_name || voiceSelection.name}`, 'GPT-4o');
+
         return {
           voice_id: parsed.voice_id || voiceSelection.voice,
           voice_name: parsed.voice_name || voiceSelection.name,
@@ -221,6 +227,8 @@ Return JSON:
       }
     }
 
+    progressService.updateProgress(jobId, 30, '🎧 Audio Performance Brief Prepared', `[AudioService] Voice selected: ${voiceSelection.name}`, 'Audio Engine');
+
     return {
       voice_id: voiceSelection.voice,
       voice_name: voiceSelection.name,
@@ -237,6 +245,10 @@ Return JSON:
    */
   static async renderAudio(episodeId: string, brief: PerformanceBrief): Promise<AudioRenderRecord> {
     const renderId = uuidv4();
+    const jobId = episodeId;
+
+    progressService.resetProgress(jobId);
+    progressService.updateProgress(jobId, 10, '🎙️ Initializing Parallel Audio Synthesis Pipeline...', `[AudioService] ⚡ Starting Audio Render for Episode ID: ${episodeId}`, 'OpenAI TTS');
 
     // 1. Fetch Episode text
     const episode = await dbGet<any>('SELECT * FROM episodes WHERE id = ?', [episodeId]);
@@ -269,7 +281,8 @@ Return JSON:
         if (!openai) return false;
         const maleVoice = (brief.voice_id === 'echo' || brief.voice_id === 'fable' || brief.voice_id === 'alloy') ? brief.voice_id : 'onyx';
         console.log(`[AudioService] ⚡ High-Speed Concurrency OpenAI Male Voice (${maleVoice}) for ${wordCount} words...`);
-        
+        progressService.updateProgress(jobId, 35, `🎙️ Synthesizing OpenAI Male Voice (${maleVoice})...`, `[AudioService] ⚡ High-Speed Concurrency OpenAI Male Voice (${maleVoice}) for ${wordCount} words...`, 'OpenAI Onyx');
+
         try {
           // Chunk text into <= 3500 character segments
           const textChunks: string[] = [];
@@ -286,6 +299,8 @@ Return JSON:
           }
           if (currentChunk.trim()) textChunks.push(currentChunk.trim());
 
+          progressService.updateProgress(jobId, 45, `🎙️ Parallel Synthesis Across ${textChunks.length} Chunks...`, `[AudioService] Split script into ${textChunks.length} parallel chunk(s)`, 'Promise.all');
+
           // PARALLEL SIMULTANEOUS PROMISE CONCURRENCY across all text chunks!
           const mp3Buffers = await Promise.all(textChunks.map(async (chunkText, index) => {
             const mp3 = await openai.audio.speech.create({
@@ -294,20 +309,25 @@ Return JSON:
               input: chunkText,
               speed: 0.98,
             });
-            return Buffer.from(await mp3.arrayBuffer());
+            const buf = Buffer.from(await mp3.arrayBuffer());
+            progressService.updateProgress(jobId, 55 + (index * 5), `🎙️ Chunk ${index + 1}/${textChunks.length} Synthesized`, `[AudioService] Chunk ${index + 1} finished (${buf.byteLength} bytes)`, 'OpenAI TTS');
+            return buf;
           }));
 
           const fullNarrationBuffer = Buffer.concat(mp3Buffers);
           fs.writeFileSync(narrationPath, fullNarrationBuffer);
           console.log(`[AudioService] 🚀 Parallel Concurrency OpenAI Male Voice Complete! Size: ${fullNarrationBuffer.byteLength} bytes.`);
+          progressService.updateProgress(jobId, 70, `🚀 OpenAI Male Voice (${maleVoice}) Complete (${fullNarrationBuffer.byteLength} bytes)`, `[AudioService] 🚀 Parallel Concurrency OpenAI Male Voice Complete! Size: ${fullNarrationBuffer.byteLength} bytes.`, 'Narration Ready');
           return true;
         } catch (openaiTtsErr: any) {
           console.warn('[AudioService] OpenAI TTS Warning:', openaiTtsErr?.message || openaiTtsErr);
+          progressService.updateProgress(jobId, 60, '⚠️ OpenAI TTS fallback triggered', `[AudioService] Warning: ${openaiTtsErr?.message}`, 'Fallback');
           return false;
         }
       })();
 
       const generateAmbiencePromise = (async () => {
+        progressService.updateProgress(jobId, 50, '🔊 Synthesizing Wind Breeze Soundscape Bed...', '[AudioService] 🔊 Synthesizing Natural Wind Breeze Soundscape Bed...', 'Soundscape Synthesizer');
         AudioService.generateNaturalWindSoundscape(brief.ambience_description || 'Eerie wind breezing through bare trees', ambiencePath, estimatedNarrationDuration + 5);
       })();
 
@@ -318,6 +338,7 @@ Return JSON:
       // Fallback if OpenAI key is unavailable
       if (!ttsSuccess && !fs.existsSync(narrationPath)) {
         console.log(`[AudioService] 🗣️ Generating Spoken Audio Narration (${wordCount} words)...`);
+        progressService.updateProgress(jobId, 65, '🗣️ Synthesizing Speech Narration...', `[AudioService] 🗣️ Generating Spoken Audio Narration (${wordCount} words)...`, 'Speech Synthesizer');
         await AudioService.generateFallbackSpeechNarrationMp3(episode.content, narrationPath);
       }
 
@@ -332,11 +353,14 @@ Return JSON:
 
       // FFMPEG-STATIC LOUD VOICE DUCKING MIX: Boost Male Voice 2.5x (+8dB) & Cap Duration
       console.log(`[AudioService] 🎛️ ffmpeg-static Mixing Master Track (${actualNarrationDuration}s)...`);
+      progressService.updateProgress(jobId, 85, `🎛️ ffmpeg-static Mixing Master Track (${actualNarrationDuration}s)...`, `[AudioService] 🎛️ ffmpeg-static Mixing Master Track (${actualNarrationDuration}s)...`, 'ffmpeg-static');
+      
       if (ffmpegPath && fs.existsSync(narrationPath) && fs.existsSync(ambiencePath)) {
         try {
           const ffmpegCmd = `"${ffmpegPath}" -y -i "${narrationPath}" -stream_loop -1 -i "${ambiencePath}" -filter_complex "[1:a]volume=0.08[bg];[0:a]volume=2.5[voice];[bg][voice]amix=inputs=2:duration=first:normalize=0[out]" -map "[out]" -t ${actualNarrationDuration} "${outputPath}"`;
           await execAsync(ffmpegCmd);
           console.log(`[AudioService] ✅ Master Track Generated Successfully at ${outputPath}`);
+          progressService.updateProgress(jobId, 95, '✅ ffmpeg-static Audio Ducks & Master Mix Complete', `[AudioService] ✅ Master Track Generated Successfully at ${outputPath}`, 'ffmpeg-static');
         } catch (mixErr: any) {
           console.warn('[AudioService] ffmpeg-static mix fallback:', mixErr?.message);
           fs.copyFileSync(narrationPath, outputPath);
@@ -375,6 +399,7 @@ Return JSON:
       `, [episodeId]);
 
       console.log(`[AudioService] ✅ High-Speed Male Voice Master Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
+      progressService.completeProgress(jobId, `[AudioService] ✅ High-Speed Male Voice Master Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
 
       return {
         id: renderId,
@@ -390,6 +415,7 @@ Return JSON:
       console.error('[AudioService] Audio Generation Failed:', err?.message || err);
       await dbRun('UPDATE audio_renders SET status = "failed" WHERE id = ?', [renderId]);
       await dbRun('UPDATE episodes SET audio_status = "none" WHERE id = ?', [episodeId]);
+      progressService.failProgress(jobId, err?.message || 'Audio generation failed');
       throw err;
     }
   }

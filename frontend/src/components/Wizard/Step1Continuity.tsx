@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ContinuityResult, ContinuityIssue, Episode } from '../../types';
 import { ShieldCheck, ArrowRight, RefreshCw, Check, Edit3, X, Save } from 'lucide-react';
 import { fetchEpisodeById, updateEpisode } from '../../api/client';
+import { AgenticTelemetryHud } from '../AgenticTelemetryHud';
 
 interface Step1ContinuityProps {
   loading: boolean;
@@ -93,23 +94,12 @@ export const Step1Continuity: React.FC<Step1ContinuityProps> = ({
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-        <div style={{
-          width: '50px',
-          height: '50px',
-          borderRadius: '50%',
-          border: '3px solid var(--border-accent)',
-          borderTopColor: 'var(--accent-red)',
-          animation: 'spin 1s infinite linear',
-          margin: '0 auto 1.5rem',
-        }} />
-        <h3 className="heading-grotesk" style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>
-          OPENAI GPT-4O CONTINUITY DIAGNOSTIC PASS...
-        </h3>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>
-          Analyzing narrative logic, character motivation, and ending cliffhanger.
-        </p>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      <div style={{ padding: '1rem 0' }}>
+        <AgenticTelemetryHud
+          jobId={result?.matched_against_episode_id || 'continuity-job'}
+          title="OPENAI GPT-4O CONTINUITY & CHARACTER VOICE PASS"
+          defaultSubstep="GPT-4o Agent"
+        />
       </div>
     );
   }

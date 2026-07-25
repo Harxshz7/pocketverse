@@ -27,6 +27,9 @@ export async function fetchJson<T>(url: string, options?: RequestInit): Promise<
 }
 
 export const api = {
+  // Telemetry Progress Stream
+  getProgress: (jobId: string) => fetchJson<any>(`/progress/${jobId}`),
+
   // Series
   getAllSeries: () => fetchJson<any[]>('/series'),
   getSeriesById: (id: string) => fetchJson<any>(`/series/${id}`),

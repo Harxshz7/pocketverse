@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { progressService } from './progressService';
 
 export interface AnalyzeContinuityParams {
   currentEpisode: {
@@ -61,10 +62,16 @@ export class AIService {
    */
   static async runContinuityAnalysis(params: AnalyzeContinuityParams) {
     const { currentEpisode, previousEpisode } = params;
+    const jobId = currentEpisode.id;
     const openai = getOpenAIClient();
+
+    progressService.resetProgress(jobId);
+    progressService.updateProgress(jobId, 15, '⚡ Reading Series Lore & Manuscript Context...', `[AIService] Reading manuscript for Episode ${currentEpisode.episode_number}: "${currentEpisode.title}"`, 'GPT-4o');
 
     if (openai) {
       console.log(`[AIService] ⚡ Executing Production GPT-4o Character & Continuity Pass for Episode ${currentEpisode.episode_number}: "${currentEpisode.title}"...`);
+      progressService.updateProgress(jobId, 45, '⚡ Executing GPT-4o Character Voice & Plot Pass...', `[AIService] Executing Production GPT-4o Character & Continuity Pass for Episode ${currentEpisode.episode_number}: "${currentEpisode.title}"...`, 'GPT-4o');
+      
       try {
         const prompt = `
 You are a 20+ year veteran fiction showrunner, master storyteller, and dialogue director specializing in serialized audio dramas and character-driven fiction.
@@ -120,6 +127,8 @@ Return ONLY a valid JSON object with the following schema:
           temperature: 0.3,
         });
 
+        progressService.updateProgress(jobId, 85, '⚡ Analyzing Ending Cliffhanger & Hook Strength...', '[AIService] Evaluating cliffhanger hook & dramatic tension...', 'GPT-4o');
+
         const parsed = JSON.parse(response.choices[0].message.content || '{}');
         const issues = (parsed.issues || []).map((iss: any) => ({
           id: uuidv4(),
@@ -139,6 +148,8 @@ Return ONLY a valid JSON object with the following schema:
           accepted: false,
         };
 
+        progressService.completeProgress(jobId, '[AIService] ✅ GPT-4o Continuity & Character Voice Analysis Complete!');
+
         return {
           issues,
           matched_against_episode_id: previousEpisode ? previousEpisode.id : null,
@@ -147,20 +158,24 @@ Return ONLY a valid JSON object with the following schema:
         };
       } catch (err: any) {
         console.error('[AIService] OpenAI API Call Error:', err?.message || err);
+        progressService.failProgress(jobId, err?.message || 'Continuity analysis failed');
       }
-    } else {
-      console.warn('[AIService] ⚠️ OPENAI_API_KEY missing in backend/.env.');
     }
 
-    return AIService.dynamicContentContinuity(currentEpisode, previousEpisode);
+    const fallback = AIService.dynamicContentContinuity(currentEpisode, previousEpisode);
+    progressService.completeProgress(jobId, '[AIService] ✅ Continuity Pass Completed (Rule Engine Fallback)');
+    return fallback;
   }
 
   /**
    * STEP 2: Grammar Layer & Dialogue Cadence Analysis
    */
-  static async runGrammarAnalysis(params: AnalyzeGrammarParams) {
+  static async runGrammarAnalysis(params: AnalyzeGrammarParams, jobId: string = 'grammar-job') {
     const { content } = params;
     const openai = getOpenAIClient();
+
+    progressService.resetProgress(jobId);
+    progressService.updateProgress(jobId, 25, '⚡ Executing GPT-4o-mini Dialogue & Pacing Copyedit...', '[AIService] ⚡ Executing Production GPT-4o-mini Dialogue & Pacing Copyedit...', 'GPT-4o-mini');
 
     if (openai) {
       console.log('[AIService] ⚡ Executing Production GPT-4o-mini Dialogue & Pacing Copyedit...');
@@ -200,6 +215,8 @@ Return ONLY a valid JSON object:
           temperature: 0.2,
         });
 
+        progressService.updateProgress(jobId, 85, '✨ Surface Dialogue Cadence & Grammar Fixes...', '[AIService] Formatting dialogue delivery & rhythm suggestions...', 'GPT-4o-mini');
+
         const parsed = JSON.parse(response.choices[0].message.content || '{}');
         const items = (parsed.grammar_issues || []).slice(0, 10).map((g: any) => ({
           id: uuidv4(),
@@ -209,21 +226,28 @@ Return ONLY a valid JSON object:
           accepted: false,
         }));
 
+        progressService.completeProgress(jobId, '[AIService] ✅ Dialogue Cadence & Grammar Pass Complete!');
         return items;
       } catch (err: any) {
         console.error('[AIService] OpenAI Grammar Call Error:', err?.message || err);
+        progressService.failProgress(jobId, err?.message || 'Grammar analysis failed');
       }
     }
 
-    return AIService.dynamicContentGrammar(content);
+    const fallback = AIService.dynamicContentGrammar(content);
+    progressService.completeProgress(jobId, '[AIService] ✅ Grammar Pass Completed (Rule Engine Fallback)');
+    return fallback;
   }
 
   /**
    * STEP 3: Tone & Character Genre Improvisation Remix
    */
-  static async runToneRemix(params: AnalyzeToneParams) {
+  static async runToneRemix(params: AnalyzeToneParams, jobId: string = 'tone-job') {
     const { category, currentEpisode, previousEpisode } = params;
     const openai = getOpenAIClient();
+
+    progressService.resetProgress(jobId);
+    progressService.updateProgress(jobId, 25, `⚡ Improvised Transformation into ${category} Genre...`, `[AIService] ⚡ Executing Production GPT-4o ${category} Genre & Dialogue Remix...`, 'GPT-4o');
 
     if (openai) {
       console.log(`[AIService] ⚡ Executing Production GPT-4o ${category} Genre & Dialogue Remix...`);
@@ -262,7 +286,11 @@ Return ONLY a valid JSON object:
           temperature: 0.7,
         });
 
+        progressService.updateProgress(jobId, 85, `✨ Generating Side-by-Side ${category} Preview...`, `[AIService] Generated ${category} atmospheric prose adaptation`, 'GPT-4o');
+
         const parsed = JSON.parse(response.choices[0].message.content || '{}');
+        progressService.completeProgress(jobId, `[AIService] ✅ ${category} Genre Remix Complete!`);
+
         return {
           category,
           original_content: currentEpisode.content,
@@ -272,10 +300,13 @@ Return ONLY a valid JSON object:
         };
       } catch (err: any) {
         console.error('[AIService] OpenAI Tone Call Error:', err?.message || err);
+        progressService.failProgress(jobId, err?.message || 'Tone remix failed');
       }
     }
 
-    return AIService.dynamicContentTone(category, currentEpisode, previousEpisode);
+    const fallback = AIService.dynamicContentTone(category, currentEpisode, previousEpisode);
+    progressService.completeProgress(jobId, `[AIService] ✅ ${category} Genre Remix Complete!`);
+    return fallback;
   }
 
   // --- Dynamic Fallback Text Analyzer ---

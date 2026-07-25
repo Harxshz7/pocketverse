@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ToneRemixResult } from '../../types';
 import { Wand2, Check, ArrowRight, X, RefreshCcw, FastForward } from 'lucide-react';
+import { AgenticTelemetryHud } from '../AgenticTelemetryHud';
 
 interface Step3ToneRemixProps {
   loading: boolean;
@@ -74,23 +75,12 @@ export const Step3ToneRemix: React.FC<Step3ToneRemixProps> = ({
 
       {/* Main Content Surface */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '4rem 2rem', flex: 1 }}>
-          <div style={{
-            width: '50px',
-            height: '50px',
-            borderRadius: '50%',
-            border: '3px solid var(--border-accent)',
-            borderTopColor: 'var(--accent-red)',
-            animation: 'spin 1s infinite linear',
-            margin: '0 auto 1.5rem',
-          }} />
-          <h3 className="heading-grotesk" style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>
-            REMIXING ATMOSPHERE INTO "{selectedCategory.toUpperCase()}"...
-          </h3>
-          <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>
-            Maintaining strict character voice and plot thread continuity across episode boundaries.
-          </p>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        <div style={{ padding: '1rem 0' }}>
+          <AgenticTelemetryHud
+            jobId="tone-job"
+            title={`OPENAI GPT-4O ${selectedCategory.toUpperCase()} ATMOSPHERE REMIX PASS`}
+            defaultSubstep="GPT-4o Agent"
+          />
         </div>
       ) : toneResult ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1 }}>

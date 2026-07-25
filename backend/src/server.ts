@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
 import { initDb } from './db/schema';
+import { progressService } from './services/progressService';
 
 // Import Controllers
 import * as SeriesController from './controllers/seriesController';
@@ -23,6 +24,13 @@ const publicAudioDir = path.join(__dirname, '../public/audio');
 app.use('/audio', express.static(publicAudioDir));
 
 // --- API ROUTES ---
+
+// 0. Real-time Telemetry & Progress API Endpoint
+app.get('/api/progress/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const progress = progressService.getProgress(jobId);
+  res.json(progress);
+});
 
 // 1. Series Routes
 app.get('/api/series', SeriesController.getAllSeries);
