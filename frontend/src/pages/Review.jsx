@@ -3,7 +3,11 @@ import { AlertCircle, CheckCircle2, Filter, Shield, ShieldAlert, Siren } from 'l
 import IssueCard from '../components/IssueCard';
 import LoadingState from '../components/LoadingState';
 import CinematicScene from '../components/CinematicScene';
-import { getAllIssues } from '../services/api';
+import {
+  generateFinalVersion,
+  getAllIssues,
+  recordPatchDecision,
+} from '../services/api';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All Issues' },
@@ -27,6 +31,9 @@ export default function Review() {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [decisionLoadingId, setDecisionLoadingId] = useState(null);
+  const [finalLoadingEpisodeId, setFinalLoadingEpisodeId] = useState(null);
+  const [finalNotice, setFinalNotice] = useState(null);
 
   const fetchIssues = useCallback(async () => {
     setLoading(true);
@@ -45,14 +52,43 @@ export default function Review() {
     fetchIssues();
   }, [fetchIssues]);
 
-  const handleResolve = (issueId) => {
-    setIssues((prev) =>
-      prev.map((i) =>
-        i.id === issueId
-          ? { ...i, resolved: true, resolved_evidence: 'Issue addressed by creator.' }
-          : i
-      )
-    );
+  const handlePatchDecision = async (issueId, action, variantId = null) => {
+    setDecisionLoadingId(issueId);
+    setError(null);
+    try {
+      const decision = await recordPatchDecision(issueId, action, variantId);
+      setIssues((prev) =>
+        prev.map((issue) =>
+          issue.id === issueId
+            ? { ...issue, patch_decision: decision }
+            : issue
+        )
+      );
+    } catch (err) {
+      setError(err.message || 'Failed to record patch decision');
+    } finally {
+      setDecisionLoadingId(null);
+    }
+  };
+
+  const handleGenerateFinalVersion = async (episodeId) => {
+    setFinalLoadingEpisodeId(episodeId);
+    setFinalNotice(null);
+    setError(null);
+    try {
+      const result = await generateFinalVersion(episodeId);
+      setIssues((prev) => [
+        ...prev.filter((issue) => issue.episode_id !== episodeId),
+        ...result.issues,
+      ]);
+      setFinalNotice(
+        `Episode ${episodeId} final v${result.version.version_number} generated: ${result.resolved_count} resolved, ${result.remaining_count} remaining.`
+      );
+    } catch (err) {
+      setError(err.message || 'Failed to generate final version');
+    } finally {
+      setFinalLoadingEpisodeId(null);
+    }
   };
 
   const filtered = issues.filter((issue) => {
@@ -76,6 +112,13 @@ export default function Review() {
     { label: 'Critical', value: stats.critical, color: 'text-verse-red', icon: Siren },
     { label: 'Needs Review', value: stats.needsReview, color: 'text-verse-amber', icon: ShieldAlert },
     { label: 'Resolved', value: stats.resolved, color: 'text-verse-green', icon: CheckCircle2 },
+  ];
+  const episodesWithAcceptedPatches = [
+    ...new Set(
+      issues
+        .filter((issue) => !issue.resolved && issue.patch_decision?.action === 'accept_variant')
+        .map((issue) => issue.episode_id)
+    ),
   ];
 
   return (
@@ -158,6 +201,42 @@ export default function Review() {
             ))}
           </div>
         </div>
+
+        <div className="pt-4 border-t border-verse-border/50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-verse-text">Final version assembly</h3>
+            <p className="text-sm text-verse-text-muted">
+              Applies only accepted patch spans against the original episode text.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {episodesWithAcceptedPatches.length > 0 ? (
+              episodesWithAcceptedPatches.map((episodeId) => (
+                <button
+                  key={episodeId}
+                  onClick={() => handleGenerateFinalVersion(episodeId)}
+                  disabled={finalLoadingEpisodeId === episodeId}
+                  className="btn-primary !py-2 !px-3 text-xs"
+                >
+                  {finalLoadingEpisodeId === episodeId && (
+                    <div className="spinner !w-3 !h-3 !border-white/30 !border-t-white" />
+                  )}
+                  Generate Final Version EP{episodeId}
+                </button>
+              ))
+            ) : (
+              <button disabled className="btn-secondary !py-2 !px-3 text-xs">
+                Accept a variant first
+              </button>
+            )}
+          </div>
+        </div>
+
+        {finalNotice && (
+          <div className="p-3 rounded-lg bg-verse-green-dim/50 border border-verse-green/20 text-verse-green text-sm">
+            {finalNotice}
+          </div>
+        )}
       </section>
 
       {loading ? (
@@ -189,7 +268,8 @@ export default function Review() {
             <IssueCard
               key={issue.id}
               issue={issue}
-              onResolve={handleResolve}
+              onPatchDecision={handlePatchDecision}
+              decisionLoading={decisionLoadingId === issue.id}
             />
           ))}
         </div>

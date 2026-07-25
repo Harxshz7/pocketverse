@@ -10,11 +10,10 @@ import uuid
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
-from .database import async_session, get_db, init_db
+from .database import get_db, init_db
 from . import memory_graph, models
 from .extraction import extract_story_elements
 from .explanation import explain_findings
@@ -177,6 +176,8 @@ async def _ensure_rewrite_variants(
     existing = await memory_graph.get_rewrite_variants_for_issue(db, issue.id)
     if existing:
         return existing
+    if issue.resolved:
+        return []
 
     original_span = _find_patchable_span(issue, episode, episode_text)
     if original_span is None:
@@ -212,7 +213,20 @@ async def _issue_to_schema(
     )
     decision = await memory_graph.get_patch_decision_for_issue(db, issue.id)
 
-    schema = ValidationIssueSchema.model_validate(issue)
+    schema = ValidationIssueSchema(
+        id=issue.id,
+        episode_id=issue.episode_id,
+        category=issue.category,
+        status=issue.status,
+        problem=issue.problem,
+        evidence=issue.evidence or [],
+        reasoning=issue.reasoning,
+        impact=issue.impact,
+        suggested_fixes=issue.suggested_fixes or [],
+        resolved=issue.resolved,
+        resolved_evidence=issue.resolved_evidence,
+        persona_tag=issue.persona_tag,
+    )
     schema.rewrite_variants = [
         RewriteVariantSchema.model_validate(v) for v in variants
     ]
@@ -546,6 +560,7 @@ async def revalidate_episode(
         "Re-validation produced a new issue set; this prior issue was superseded.",
     )
     issues = await _persist_validation_findings(db, episode, episode_text, findings)
+    await _rebuild_story_memory_graph(db)
 
     await db.commit()
 
@@ -558,6 +573,106 @@ async def revalidate_episode(
 
     return await _issues_to_schemas(
         db, issues, episode, episode_text, ensure_variants=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rewrite patch decisions and final assembly
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/issues/{issue_id}/patch",
+    response_model=PatchDecisionSchema,
+)
+async def record_patch_decision(
+    issue_id: str,
+    body: PatchDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Record Accept Variant N or Keep Original for an issue."""
+    issue = await memory_graph.get_issue_by_id(db, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    variant = None
+    if body.action == PatchAction.ACCEPT_VARIANT:
+        if not body.variant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="variant_id is required when accepting a variant.",
+            )
+        variant = await memory_graph.get_rewrite_variant(
+            db, issue_id, body.variant_id
+        )
+        if variant is None:
+            raise HTTPException(status_code=404, detail="Rewrite variant not found")
+
+    decision = await memory_graph.upsert_patch_decision(
+        db,
+        issue=issue,
+        action=body.action.value,
+        variant=variant,
+    )
+    await db.commit()
+    return PatchDecisionSchema.model_validate(decision)
+
+
+@app.post(
+    "/api/v1/episodes/{episode_id}/final-version",
+    response_model=FinalVersionResponse,
+)
+async def generate_final_version(
+    episode_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Assemble a final version from accepted patches, then revalidate it."""
+    episode = await memory_graph.get_episode(db, episode_id)
+    if episode is None:
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+    old_issues = await memory_graph.get_issues_for_episode(db, episode_id)
+    decisions = await memory_graph.get_patch_decisions_for_episode(db, episode_id)
+    final_text = _apply_accepted_patches(episode.raw_text, decisions)
+
+    version = await memory_graph.add_episode_version(
+        db,
+        episode_id=episode_id,
+        raw_text=final_text,
+        source="accepted_patches",
+        validation_status="pending",
+    )
+
+    # Close the memory loop with the assembled version before revalidation.
+    await _rebuild_story_memory_graph(db)
+    findings = await validate_episode(db, episode_id)
+
+    resolved_count = _mark_unresolved_issues_resolved(
+        old_issues,
+        f"Final version v{version.version_number} assembled from accepted rewrite patches.",
+    )
+
+    remaining_issues: list[models.ValidationIssue] = []
+    if findings:
+        version.validation_status = "needs_review"
+        remaining_issues = await _persist_validation_findings(
+            db, episode, final_text, findings
+        )
+    else:
+        version.validation_status = "passed"
+
+    await db.commit()
+    all_issues = await memory_graph.get_issues_for_episode(db, episode_id)
+
+    return FinalVersionResponse(
+        version=EpisodeVersionSchema.model_validate(version),
+        original_text=episode.raw_text,
+        final_text=final_text,
+        issues=await _issues_to_schemas(
+            db, all_issues, episode, final_text, ensure_variants=False
+        ),
+        resolved_count=resolved_count,
+        remaining_count=len(remaining_issues),
     )
 
 

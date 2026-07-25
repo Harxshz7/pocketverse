@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Lightbulb,
-  Zap,
   Target,
-  CheckCircle2,
   Wrench,
+  XCircle,
+  Zap,
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import EvidenceCard from './EvidenceCard';
@@ -19,40 +20,34 @@ const CATEGORY_LABELS = {
   RELATIONSHIP_INCONSISTENCY: { label: 'Relationship Inconsistency', icon: Target },
 };
 
-export default function IssueCard({ issue, onResolve }) {
+export default function IssueCard({
+  issue,
+  onPatchDecision,
+  decisionLoading = false,
+}) {
   const [expanded, setExpanded] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState(issue.resolved);
 
   const category = CATEGORY_LABELS[issue.category] || {
     label: issue.category,
     icon: Zap,
   };
   const CategoryIcon = category.icon;
-
-  const handleResolve = async () => {
-    setResolving(true);
-    // Trigger the resolve animation
-    await new Promise(r => setTimeout(r, 1200));
-    setResolved(true);
-    setResolving(false);
-    if (onResolve) onResolve(issue.id);
-  };
-
+  const resolved = issue.resolved;
   const displayStatus = resolved ? 'resolved' : issue.status;
+  const variants = issue.rewrite_variants || [];
+  const selectedDecision = issue.patch_decision;
+  const isRewriteEligible = ['critical', 'needs_review'].includes(issue.status);
 
   return (
     <div
       className={`
         card issue-card-premium overflow-hidden transition-all duration-500
-        ${resolving ? 'animate-resolve' : ''}
         ${resolved ? 'border-verse-green/30 shadow-[0_0_20px_rgba(45,212,160,0.1)]' : ''}
         ${!resolved && issue.status === 'critical' ? 'border-verse-red/30' : ''}
         animate-fade-in
       `}
       style={{ animationDelay: '0.05s' }}
     >
-      {/* Header */}
       <div
         className="flex items-start gap-4 p-5 cursor-pointer select-none hover:bg-verse-surface-hover/50 transition-colors"
         onClick={() => setExpanded(!expanded)}
@@ -61,7 +56,6 @@ export default function IssueCard({ issue, onResolve }) {
         onKeyDown={(e) => e.key === 'Enter' && setExpanded(!expanded)}
         aria-expanded={expanded}
       >
-        {/* Category icon */}
         <div className={`
           mt-0.5 p-2 rounded-lg shrink-0
           ${resolved
@@ -78,7 +72,6 @@ export default function IssueCard({ issue, onResolve }) {
           }
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex items-center gap-3 flex-wrap">
             <StatusBadge status={displayStatus} />
@@ -107,7 +100,6 @@ export default function IssueCard({ issue, onResolve }) {
           </p>
         </div>
 
-        {/* Expand toggle */}
         <div className="text-verse-text-muted mt-1 shrink-0">
           {expanded
             ? <ChevronUp size={18} />
@@ -116,10 +108,8 @@ export default function IssueCard({ issue, onResolve }) {
         </div>
       </div>
 
-      {/* Expanded content */}
       {expanded && (
         <div className="px-5 pb-5 space-y-5 border-t border-verse-border/40 pt-4 animate-fade-in">
-          {/* Evidence */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono">
               Evidence
@@ -131,7 +121,6 @@ export default function IssueCard({ issue, onResolve }) {
             </div>
           </div>
 
-          {/* Reasoning */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono">
               Reasoning
@@ -141,7 +130,6 @@ export default function IssueCard({ issue, onResolve }) {
             </p>
           </div>
 
-          {/* Impact */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono">
               Impact
@@ -151,7 +139,6 @@ export default function IssueCard({ issue, onResolve }) {
             </p>
           </div>
 
-          {/* Suggested Fixes */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono flex items-center gap-2">
               <Wrench size={12} />
@@ -172,7 +159,89 @@ export default function IssueCard({ issue, onResolve }) {
             </ul>
           </div>
 
-          {/* Resolved evidence */}
+          {!resolved && isRewriteEligible && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono flex items-center gap-2">
+                <Wrench size={12} />
+                Rewrite Variants
+              </h4>
+              {variants.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {variants.map((variant) => {
+                    const selected = selectedDecision?.variant_db_id === variant.id;
+                    return (
+                      <div
+                        key={variant.id}
+                        className={`
+                          glass-panel p-4 space-y-3
+                          ${selected ? 'border-verse-green/40 shadow-[0_0_18px_rgba(45,212,160,0.12)]' : ''}
+                        `}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs mono text-verse-red uppercase tracking-wider">
+                            {variant.variant_id} / {variant.tone_label}
+                          </span>
+                          {selected && (
+                            <span className="text-xs text-verse-green mono flex items-center gap-1">
+                              <CheckCircle2 size={12} />
+                              Accepted
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-verse-text leading-relaxed">
+                          {variant.rewritten_text}
+                        </p>
+                        <p className="text-xs text-verse-text-muted leading-relaxed">
+                          {variant.rationale}
+                        </p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPatchDecision?.(issue.id, 'accept_variant', variant.variant_id);
+                          }}
+                          disabled={decisionLoading || selected}
+                          className="btn-secondary !py-2 !px-3 text-xs"
+                        >
+                          <CheckCircle2 size={13} />
+                          Accept {variant.variant_id}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-verse-text-muted">
+                  No exact quoted span from this episode was available for safe patching.
+                </p>
+              )}
+              <div className="flex justify-end">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPatchDecision?.(issue.id, 'keep_original');
+                  }}
+                  disabled={decisionLoading || selectedDecision?.action === 'keep_original'}
+                  className="btn-secondary !py-2 !px-3 text-xs"
+                >
+                  <XCircle size={13} />
+                  Keep Original
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedDecision?.action === 'keep_original' && (
+            <div className="space-y-2 p-3 bg-verse-black/40 border border-verse-border rounded-lg">
+              <h4 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono flex items-center gap-2">
+                <XCircle size={12} />
+                Patch Decision
+              </h4>
+              <p className="text-sm text-verse-text-muted">
+                Original wording kept. This issue will not contribute a patch to the final version.
+              </p>
+            </div>
+          )}
+
           {resolved && issue.resolved_evidence && (
             <div className="space-y-2 p-3 bg-verse-green-dim/50 border border-verse-green/20 rounded-lg">
               <h4 className="text-xs font-bold tracking-wider text-verse-green uppercase mono flex items-center gap-2">
@@ -182,32 +251,6 @@ export default function IssueCard({ issue, onResolve }) {
               <p className="text-sm text-verse-green/80 leading-relaxed">
                 {issue.resolved_evidence}
               </p>
-            </div>
-          )}
-
-          {/* Resolve button */}
-          {!resolved && (
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleResolve();
-                }}
-                disabled={resolving}
-                className="btn-secondary text-sm flex items-center gap-2"
-              >
-                {resolving ? (
-                  <>
-                    <div className="spinner !w-4 !h-4" />
-                    Resolving...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={14} />
-                    Mark as Resolved
-                  </>
-                )}
-              </button>
             </div>
           )}
         </div>

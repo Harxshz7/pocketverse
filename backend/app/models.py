@@ -263,7 +263,7 @@ class ValidationIssue(Base):
         back_populates="issue", cascade="all, delete-orphan"
     )
     patch_decision: Mapped["PatchDecision | None"] = relationship(
-        back_populates="issue", cascade="all, delete-orphan"
+        back_populates="issue", cascade="all, delete-orphan", uselist=False
     )
 
 

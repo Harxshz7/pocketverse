@@ -184,6 +184,66 @@ export async function revalidateEpisode(episodeId) {
   }
 }
 
+export async function recordPatchDecision(issueId, action, variantId = null) {
+  try {
+    return await request(`/issues/${issueId}/patch`, {
+      method: 'POST',
+      body: JSON.stringify({ action, variant_id: variantId }),
+    });
+  } catch (err) {
+    if (err.isNetworkError) {
+      console.warn('[API] Backend offline — simulating patch decision');
+      const issue = mockIssues.find(i => i.id === issueId);
+      const variant = issue?.rewrite_variants?.find(v => v.variant_id === variantId);
+      return {
+        id: Date.now(),
+        episode_id: issue?.episode_id,
+        issue_id: issueId,
+        action,
+        variant_db_id: variant?.id || null,
+        original_span: variant?.original_span || null,
+        rewritten_text: variant?.rewritten_text || null,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function generateFinalVersion(episodeId) {
+  try {
+    return await request(`/episodes/${episodeId}/final-version`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    if (err.isNetworkError) {
+      console.warn('[API] Backend offline — simulating final version generation');
+      await new Promise(r => setTimeout(r, 1500));
+      const episodeIssues = mockIssues.filter(i => i.episode_id === episodeId);
+      return {
+        version: {
+          id: Date.now(),
+          episode_id: episodeId,
+          version_number: 1,
+          raw_text: '',
+          source: 'accepted_patches',
+          validation_status: 'passed',
+          created_at: new Date().toISOString(),
+        },
+        original_text: '',
+        final_text: '',
+        issues: episodeIssues.map(i => ({
+          ...i,
+          resolved: true,
+          resolved_evidence: 'Final version generated from accepted patches.',
+        })),
+        resolved_count: episodeIssues.length,
+        remaining_count: 0,
+      };
+    }
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Usage stats
 // ---------------------------------------------------------------------------
