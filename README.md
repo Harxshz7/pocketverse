@@ -1,8 +1,6 @@
-# PocketVerse
+# StoryGuard (PocketVerse)
 
-AI Creator Copilot for serialized audio storytelling. Catches continuity errors — character contradictions, timeline breaks, broken promises — using a **Story Memory Graph** and evidence-backed validation.
-
-Built for the Pocket FM "Zero to One" Hackathon.
+AI operating system for long-form story creators. StoryGuard ingests stories, builds permanent story memory, maintains a knowledge graph, detects plot holes, powers a writers room, and produces consistency-safe rewrites.
 
 ## Quick Start
 
@@ -12,7 +10,7 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # Add your OPENAI_API_KEY
+cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -27,20 +25,14 @@ Open **http://localhost:5173** in your browser.
 
 ## Architecture
 
-- **Frontend**: React + Vite + Tailwind CSS — dark cinematic theme
-- **Backend**: FastAPI + async SQLAlchemy + aiosqlite
-- **LLM**: OpenAI `gpt-4.1-mini` via structured outputs
+- **Frontend**: React 19, Vite, TailwindCSS, moving to TypeScript, React Query, React Router, Zustand, React Flow, and shadcn/ui.
+- **Backend**: FastAPI, Python 3.12, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, pgvector, Redis, Celery.
+- **AI**: OpenAI structured outputs, embeddings, streaming responses, and retrieval-bounded prompt construction.
 
-### Pipeline
-```
-Episodes → Extraction (LLM) → Story Memory Graph (DB)
-                                       ↓
-                              Validation Engine (deterministic)
-                                       ↓
-                              Explanation Layer (LLM explains findings)
-                                       ↓
-                              Re-validation (deterministic re-check)
-```
+Architecture source of truth:
 
-## Team
-PocketVerse Hackathon Team
+- `docs/architecture/system-architecture.md`
+- `docs/architecture/folder-structure.md`
+- `docs/architecture/database-schema.md`
+
+The existing prototype API remains runnable while the production Clean Architecture modules are introduced phase by phase.

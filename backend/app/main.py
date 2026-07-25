@@ -345,9 +345,9 @@ def _apply_accepted_patches(
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="PocketVerse API",
-    description="AI Creator Copilot for serialized audio storytelling",
-    version="0.1.0",
+    title="StoryGuard API",
+    description="AI operating system for long-form story creators",
+    version="0.2.0",
 )
 
 # CORS for frontend
@@ -364,7 +364,7 @@ app.add_middleware(
 async def startup():
     """Initialize the database on startup."""
     await init_db()
-    logger.info("PocketVerse API started — database initialized")
+    logger.info("StoryGuard API started - database initialized")
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +375,7 @@ async def startup():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0"}
 
 
 # ---------------------------------------------------------------------------

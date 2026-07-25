@@ -1,6 +1,6 @@
-# PocketVerse Backend
+# StoryGuard Backend
 
-AI Creator Copilot for serialized audio storytelling — FastAPI backend.
+FastAPI backend for StoryGuard, the AI operating system for long-form story creators.
 
 ## Quick Start
 
@@ -10,9 +10,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Set your OpenAI API key
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
 
 # Run the server
 uvicorn app.main:app --reload --port 8000
@@ -20,20 +18,26 @@ uvicorn app.main:app --reload --port 8000
 
 ## Architecture
 
-```
-Episodes (raw text)
-       ↓
-Memory Extraction (LLM call, structured output) → extraction.py
-       ↓
-Story Memory Graph (relational DB) → models.py + memory_graph.py
-       ↓
-Validation Engine (deterministic, zero LLM) → validation_engine.py
-       ↓
-Evidence Retrieval (from graph)
-       ↓
-Explanation Layer (LLM explains findings) → explanation.py
-       ↓
-Re-validation (deterministic re-check)
+The production architecture is layered under:
+
+- `app/domain` for enums, entities, and domain invariants.
+- `app/application` for use cases, commands, queries, services, and ports.
+- `app/infrastructure` for SQLAlchemy, OpenAI, queues, storage, and parsers.
+- `app/interfaces/http` for FastAPI routers and transport DTOs.
+
+The prototype modules in `app/*.py` remain operational during migration.
+
+## Database
+
+Production schema ownership starts in:
+
+- `app/infrastructure/persistence/models.py`
+- `alembic/versions/202607250001_storyguard_foundation.py`
+
+Run migrations from `backend/`:
+
+```bash
+alembic upgrade head
 ```
 
 ## API Endpoints
@@ -54,5 +58,8 @@ Re-validation (deterministic re-check)
 ## Environment Variables
 
 - `OPENAI_API_KEY` — Required for LLM extraction and explanation
-- `DATABASE_URL` — Default: `sqlite+aiosqlite:///./pocketverse.db`
-- `MODEL_NAME` — Default: `gpt-4.1-mini`
+- `DATABASE_URL` — PostgreSQL async URL for production
+- `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` — Async pipeline infrastructure
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` — File storage
+- `JWT_SECRET_KEY` — Signing key for access and refresh tokens
+- `MODEL_NAME`, `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` — AI model configuration
