@@ -694,6 +694,13 @@ async def generate_final_version(
         validation_status="pending",
     )
 
+    try:
+        await _extract_episode_facts_into_graph(db, episode, final_text)
+    except Exception:
+        logger.exception(
+            "Extraction of accepted final version facts failed for episode %d", episode_id
+        )
+
     findings = await validate_episode(db, episode_id)
 
     resolved_count = _mark_unresolved_issues_resolved(

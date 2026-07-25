@@ -61,20 +61,19 @@ _REWRITE_VARIANT_SCHEMA = {
     "additionalProperties": False,
 }
 
-_SYSTEM_PROMPT = """You are a serialized audio story rewrite assistant.
+_SYSTEM_PROMPT = """You are a senior AI story rewrite engine for serialized fiction.
 
-You receive one continuity issue and one exact quoted span from the episode.
-Rewrite only that exact span. Do not rewrite surrounding text. Do not correct
-grammar broadly. Do not invent engagement predictions. The goal is to provide
-3-4 concrete replacement options that preserve the episode's established tone
-while resolving or softening the continuity contradiction described by the issue.
+You receive one continuity issue and one exact quoted span from the episode text.
+Your task is to provide 3-4 rewritten variants of that exact quoted span in a single batched JSON response.
 
-Tone labels must be derived from the episode's own writing style and the issue
-context. Labels may be simple, such as "Subtle", "Dramatic", "Concise", or
-"Match Original", but do not use a fixed unrelated genre list.
+Requirements for each variant:
+1. Replace ONLY the exact quoted span. Do not include surrounding text.
+2. Resolve or eliminate the continuity contradiction.
+3. Perform a thorough grammar, flow, and clarity pass on the rewritten span as part of this instruction.
+4. Tone labels: Variant 1 must match the episode's own established tone by default (e.g. "Canon Match"). The remaining variants should explore stylistic variations (such as Horror, Comedy, Romance, or Thriller) while remaining faithful to the story context.
+5. Provide a clear rationale explaining how the variant fixes the continuity issue and improves grammar/clarity.
 
-Return exactly one JSON object matching the schema."""
-
+Return exactly one JSON object conforming to the schema."""
 
 async def generate_rewrite_variants(
     *,
@@ -114,10 +113,11 @@ async def generate_rewrite_variants(
             },
             "exact_original_span_to_replace": original_span,
             "constraints": [
-                "Return 3-4 variants in one response.",
-                "Each rewritten_text must replace only the exact original span.",
-                "Do not include surrounding episode text unless it is part of the exact original span.",
-                "Preserve story facts except where the continuity issue requires a correction.",
+                "Return 3-4 variants in one batched response.",
+                "Variant 1 must match the established episode tone.",
+                "Include optional Horror/Comedy/Romance/Thriller variants as appropriate for the story context.",
+                "Apply a grammar, rhythm, and clarity enhancement to each variant.",
+                "Each rewritten_text replaces only the exact original span.",
             ],
         },
         indent=2,
