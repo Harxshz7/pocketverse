@@ -186,16 +186,20 @@ async def _ensure_rewrite_variants(
     if original_span is None:
         return []
 
-    variants = await generate_rewrite_variants(
-        episode_number=episode.number,
-        episode_title=episode.title,
-        episode_text=episode_text,
-        issue_category=issue.category,
-        issue_status=issue.status,
-        issue_problem=issue.problem,
-        issue_reasoning=issue.reasoning,
-        original_span=original_span,
-    )
+    try:
+        variants = await generate_rewrite_variants(
+            episode_number=episode.number,
+            episode_title=episode.title,
+            episode_text=episode_text,
+            issue_category=issue.category,
+            issue_status=issue.status,
+            issue_problem=issue.problem,
+            issue_reasoning=issue.reasoning,
+            original_span=original_span,
+        )
+    except Exception:
+        logger.exception("Rewrite variant generation failed for issue %s", issue.id)
+        return []
     if not variants:
         return []
     return await memory_graph.add_rewrite_variants(db, issue.id, original_span, variants)
@@ -510,8 +514,6 @@ async def validate_episode_endpoint(
     episode_text = await _latest_episode_text(db, episode)
 
     if not findings:
-        # Passing episodes close the memory loop for future validations.
-        await _rebuild_story_memory_graph(db)
         await db.commit()
         logger.info("No issues found for episode %d", episode_id)
         return []
@@ -554,12 +556,10 @@ async def revalidate_episode(
     episode_text = await _latest_episode_text(db, episode)
 
     if not findings:
-        # All current issues resolved; close the memory loop.
         _mark_unresolved_issues_resolved(
             old_issues,
             "Re-validation passed; issue no longer appears in the current episode text.",
         )
-        await _rebuild_story_memory_graph(db)
         await db.commit()
         logger.info("Re-validation: all issues resolved for episode %d", episode_id)
         return []
@@ -569,7 +569,6 @@ async def revalidate_episode(
         "Re-validation produced a new issue set; this prior issue was superseded.",
     )
     issues = await _persist_validation_findings(db, episode, episode_text, findings)
-    await _rebuild_story_memory_graph(db)
 
     await db.commit()
 
