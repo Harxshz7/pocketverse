@@ -8,6 +8,8 @@ export interface Series {
 
 export type EpisodeStatus = 'draft' | 'analyzed' | 'finalized';
 
+export type AudioStatus = 'none' | 'generating' | 'ready_to_review' | 'published';
+
 export interface Episode {
   id: string;
   series_id: string;
@@ -15,8 +17,43 @@ export interface Episode {
   title: string;
   content: string;
   status: EpisodeStatus;
+  audio_status?: AudioStatus;
+  published_at?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface VoiceSettings {
+  stability: number;
+  similarity_boost: number;
+  style: number;
+  use_speaker_boost: boolean;
+}
+
+export interface PacingNote {
+  text_span: string;
+  pause_ms: number;
+  emphasis?: 'none' | 'moderate' | 'strong';
+}
+
+export interface PerformanceBrief {
+  voice_id: string;
+  voice_name?: string;
+  voice_settings: VoiceSettings;
+  pacing_notes: PacingNote[];
+  ambience_description: string;
+  ambience_volume_db: number;
+}
+
+export interface AudioRender {
+  id: string;
+  episode_id: string;
+  performance_brief: PerformanceBrief;
+  voice_id: string;
+  audio_url: string;
+  duration_seconds: number;
+  status: 'generating' | 'ready' | 'failed';
+  created_at: string;
 }
 
 export interface ContinuityIssue {

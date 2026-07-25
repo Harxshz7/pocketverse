@@ -35,6 +35,8 @@ export function initDb(): Promise<void> {
           title TEXT NOT NULL,
           content TEXT NOT NULL,
           status TEXT CHECK(status IN ('draft', 'analyzed', 'finalized')) DEFAULT 'draft',
+          audio_status TEXT CHECK(audio_status IN ('none', 'generating', 'ready_to_review', 'published')) DEFAULT 'none',
+          published_at DATETIME,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
@@ -54,7 +56,28 @@ export function initDb(): Promise<void> {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
         );
-      `, (err) => {
+      `);
+
+      // Table 4: AudioRenders
+      db.run(`
+        CREATE TABLE IF NOT EXISTS audio_renders (
+          id TEXT PRIMARY KEY,
+          episode_id TEXT NOT NULL,
+          performance_brief TEXT NOT NULL,
+          voice_id TEXT NOT NULL,
+          audio_url TEXT NOT NULL,
+          duration_seconds REAL NOT NULL DEFAULT 0,
+          status TEXT CHECK(status IN ('generating', 'ready', 'failed')) DEFAULT 'generating',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
+        );
+      `);
+
+      // Schema Migrations for existing database tables
+      db.run(`ALTER TABLE episodes ADD COLUMN audio_status TEXT CHECK(audio_status IN ('none', 'generating', 'ready_to_review', 'published')) DEFAULT 'none'`, () => {});
+      db.run(`ALTER TABLE episodes ADD COLUMN published_at DATETIME`, () => {});
+
+      db.run('SELECT 1', (err) => {
         if (err) {
           console.error('Error initializing database tables:', err);
           reject(err);

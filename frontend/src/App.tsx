@@ -5,261 +5,283 @@ import { EpisodeList } from './components/EpisodeList';
 import { EpisodeEditor } from './components/EpisodeEditor';
 import { FinishedEpisodeView } from './components/FinishedEpisodeView';
 import { WizardContainer } from './components/Wizard/WizardContainer';
-import { Series, Episode } from './types';
-import {
-  fetchSeriesList,
-  createSeries,
-  fetchSeriesById,
-  createEpisode,
-  fetchEpisodeById,
-  updateEpisode,
-  deleteEpisode,
-} from './api/client';
-import { Layers, Plus } from 'lucide-react';
+import { AudioStudioModal } from './components/AudioStudioModal';
+import { Series, Episode, AnalysisRun } from './types';
+import { api } from './api/client';
+import { RotateCw, PlusCircle } from 'lucide-react';
 
-export const App: React.FC = () => {
+export function App() {
   const [seriesList, setSeriesList] = useState<Series[]>([]);
-  const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
-  const [selectedEpisode, setSelectedEpisode] = useState<(Episode & { series_title?: string; analysis_run?: any }) | null>(null);
+  const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
+  const [seriesData, setSeriesData] = useState<Series | null>(null);
 
-  // Modals & Views
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
+  const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
+  const [latestAnalysis, setLatestAnalysis] = useState<AnalysisRun | null>(null);
+
+  // View States
   const [isSeriesModalOpen, setIsSeriesModalOpen] = useState<boolean>(false);
   const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'editor' | 'reader'>('editor');
+  const [wizardStartStep, setWizardStartStep] = useState<number>(1);
+  const [isAudioStudioOpen, setIsAudioStudioOpen] = useState<boolean>(false);
+  const [audioTargetEpisode, setAudioTargetEpisode] = useState<Episode | null>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Initial load
   useEffect(() => {
-    loadSeriesData();
+    loadSeriesList();
   }, []);
 
-  const loadSeriesData = async () => {
+  useEffect(() => {
+    if (selectedSeriesId) {
+      loadSeriesDetails(selectedSeriesId);
+    }
+  }, [selectedSeriesId]);
+
+  useEffect(() => {
+    if (selectedEpisodeId) {
+      loadEpisodeDetails(selectedEpisodeId);
+    } else {
+      setCurrentEpisode(null);
+      setLatestAnalysis(null);
+    }
+  }, [selectedEpisodeId]);
+
+  const loadSeriesList = async () => {
     setLoading(true);
     try {
-      const list = await fetchSeriesList();
+      const list = await api.getAllSeries();
       setSeriesList(list);
-
-      if (list.length > 0) {
-        const active = list[0];
-        await handleSelectSeries(active);
-      } else {
-        setSelectedSeries(null);
-        setEpisodes([]);
-        setSelectedEpisode(null);
+      if (list.length > 0 && !selectedSeriesId) {
+        setSelectedSeriesId(list[0].id);
       }
     } catch (err: any) {
-      console.error('Failed to load series data:', err);
+      console.error('Failed to load series:', err);
+      setError(err.message || 'Failed to load series');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectSeries = async (series: Series) => {
-    setSelectedSeries(series);
+  const loadSeriesDetails = async (id: string) => {
     try {
-      const fullSeries = await fetchSeriesById(series.id);
-      const epList = fullSeries.episodes || [];
-      setEpisodes(epList);
-
-      if (epList.length > 0) {
-        await handleSelectEpisode(epList[0].id);
+      const data = await api.getSeriesById(id);
+      setSeriesData(data);
+      if (data.episodes && data.episodes.length > 0) {
+        if (!selectedEpisodeId || !data.episodes.find((e: Episode) => e.id === selectedEpisodeId)) {
+          setSelectedEpisodeId(data.episodes[0].id);
+        }
       } else {
-        setSelectedEpisode(null);
+        setSelectedEpisodeId(null);
       }
     } catch (err: any) {
-      console.error('Error fetching series details:', err);
+      console.error('Failed to load series details:', err);
+      setError(err.message || 'Failed to load series details');
     }
   };
 
-  const handleSelectEpisode = async (episodeId: string) => {
+  const loadEpisodeDetails = async (id: string) => {
     try {
-      const fullEp = await fetchEpisodeById(episodeId);
-      setSelectedEpisode(fullEp);
-      setViewMode(fullEp.status === 'finalized' ? 'reader' : 'editor');
+      const data = await api.getEpisodeById(id);
+      setCurrentEpisode(data.episode);
+      setLatestAnalysis(data.latest_analysis || null);
     } catch (err: any) {
-      console.error('Error fetching episode:', err);
+      console.error('Failed to load episode:', err);
     }
   };
 
-  const handleCreateSeries = async (title: string) => {
-    const newSeries = await createSeries(title);
-    const updatedList = await fetchSeriesList();
-    setSeriesList(updatedList);
-    await handleSelectSeries(newSeries);
+  const handleCreateSeries = async (data: { title: string; description?: string }) => {
+    try {
+      const newSeries = await api.createSeries(data);
+      await loadSeriesList();
+      setSelectedSeriesId(newSeries.id);
+      setIsSeriesModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to create series:', err);
+      alert(err.message || 'Could not create series');
+    }
   };
 
   const handleCreateEpisode = async () => {
-    if (!selectedSeries) return;
+    if (!selectedSeriesId) return;
     try {
-      const nextEpNum = episodes.length + 1;
-      const title = `Episode ${nextEpNum}: Chapter Title`;
-      const initialContent = ''; // Clean empty content for user to paste/write their story
-
-      const newEp = await createEpisode(selectedSeries.id, title, initialContent);
-      
-      const fullSeries = await fetchSeriesById(selectedSeries.id);
-      setEpisodes(fullSeries.episodes || []);
-      await handleSelectEpisode(newEp.id);
+      const newEp = await api.createEpisode(selectedSeriesId, {
+        title: `Episode ${(seriesData?.episodes?.length || 0) + 1}`,
+        content: '',
+      });
+      await loadSeriesDetails(selectedSeriesId);
+      setSelectedEpisodeId(newEp.id);
+      setIsWizardOpen(false);
     } catch (err: any) {
-      console.error('Error creating episode:', err);
+      console.error('Failed to create episode:', err);
+      alert(err.message || 'Could not create episode');
     }
   };
 
-  const handleSaveEpisodeContent = async (title: string, content: string) => {
-    if (!selectedEpisode) return;
+  const handleDeleteEpisode = async (episodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this episode?')) return;
     try {
-      const updated = await updateEpisode(selectedEpisode.id, title, content);
-      setSelectedEpisode(prev => prev ? { ...prev, title: updated.title, content: updated.content } : null);
-      
-      setEpisodes(prev =>
-        prev.map(e => e.id === updated.id ? { ...e, title: updated.title, content: updated.content } : e)
-      );
-    } catch (err: any) {
-      console.error('Error saving episode:', err);
-    }
-  };
-
-  const handleDeleteEpisode = async (episodeId: string) => {
-    try {
-      await deleteEpisode(episodeId);
-      if (selectedSeries) {
-        const fullSeries = await fetchSeriesById(selectedSeries.id);
-        const epList = fullSeries.episodes || [];
-        setEpisodes(epList);
-        if (epList.length > 0) {
-          await handleSelectEpisode(epList[0].id);
-        } else {
-          setSelectedEpisode(null);
-        }
+      await api.deleteEpisode(episodeId);
+      if (selectedSeriesId) {
+        await loadSeriesDetails(selectedSeriesId);
       }
     } catch (err: any) {
-      console.error('Error deleting episode:', err);
+      console.error('Failed to delete episode:', err);
     }
   };
 
-  const handleWizardFinished = async (finalizedEpisode: Episode) => {
-    setIsWizardOpen(false);
-    if (selectedSeries) {
-      const fullSeries = await fetchSeriesById(selectedSeries.id);
-      setEpisodes(fullSeries.episodes || []);
+  const handleUpdateScript = (newContent: string) => {
+    if (currentEpisode) {
+      setCurrentEpisode({ ...currentEpisode, content: newContent });
     }
-    await handleSelectEpisode(finalizedEpisode.id);
-    setViewMode('reader');
+  };
+
+  const handleUpdateTitle = (newTitle: string) => {
+    if (currentEpisode) {
+      setCurrentEpisode({ ...currentEpisode, title: newTitle });
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!currentEpisode) return;
+    try {
+      await api.updateEpisode(currentEpisode.id, {
+        title: currentEpisode.title,
+        content: currentEpisode.content,
+      });
+      if (selectedSeriesId) {
+        await loadSeriesDetails(selectedSeriesId);
+      }
+    } catch (err: any) {
+      console.error('Failed to save draft:', err);
+    }
+  };
+
+  const handleLaunchWizard = async (step: number = 1) => {
+    if (currentEpisode) {
+      await handleSaveDraft();
+      setWizardStartStep(step);
+      setIsWizardOpen(true);
+    }
+  };
+
+  const handleOpenAudioStudio = (ep: Episode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setAudioTargetEpisode(ep);
+    setIsAudioStudioOpen(true);
+  };
+
+  const handleWizardComplete = async () => {
+    setIsWizardOpen(false);
+    if (selectedEpisodeId) {
+      await loadEpisodeDetails(selectedEpisodeId);
+    }
+    if (selectedSeriesId) {
+      await loadSeriesDetails(selectedSeriesId);
+    }
   };
 
   return (
     <div className="app-container">
-      <div className="hero-glow" />
-
       <Header
         seriesList={seriesList}
-        selectedSeries={selectedSeries}
-        onSelectSeries={handleSelectSeries}
+        selectedSeriesId={selectedSeriesId}
+        onSelectSeries={setSelectedSeriesId}
         onOpenNewSeriesModal={() => setIsSeriesModalOpen(true)}
       />
 
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '6rem 2rem' }}>
-          <div style={{
-            width: '45px',
-            height: '45px',
-            borderRadius: '50%',
-            border: '3px solid var(--border-accent)',
-            borderTopColor: 'var(--accent-red)',
-            animation: 'spin 1s infinite linear',
-            margin: '0 auto 1rem',
-          }} />
-          <h3 className="heading-grotesk">INITIALIZING COMMAND CENTER...</h3>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        </div>
-      ) : seriesList.length === 0 ? (
-        <main className="panel panel-accent" style={{
-          textAlign: 'center',
-          padding: '4rem 2rem',
-          maxWidth: '700px',
-          margin: '3rem auto',
-          position: 'relative',
-          zIndex: 2,
-        }}>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--accent-red-subtle)',
-            border: '1px solid var(--border-accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 1.5rem',
-            boxShadow: 'var(--shadow-glow)',
-          }}>
-            <Layers size={32} className="accent-text" />
-          </div>
+      <div style={{ display: 'flex', gap: '1.5rem', flex: 1, marginTop: '1rem' }}>
+        {/* Sidebar */}
+        <EpisodeList
+          episodes={seriesData?.episodes || []}
+          selectedEpisodeId={selectedEpisodeId}
+          onSelectEpisode={setSelectedEpisodeId}
+          onCreateEpisode={handleCreateEpisode}
+          onDeleteEpisode={handleDeleteEpisode}
+          onOpenAudioStudio={handleOpenAudioStudio}
+        />
 
-          <h2 style={{ fontSize: '1.8rem', marginBottom: '0.75rem' }}>
-            WELCOME TO POCKET<span className="accent-text">VERSE</span>
-          </h2>
-          <p style={{ color: 'var(--ink-muted)', fontSize: '0.95rem', marginBottom: '2rem', lineHeight: 1.7 }}>
-            The production-grade command center for serialized story creators. Build multi-episode series with OpenAI-powered continuity checks, copyediting, and genre remixing before publishing.
-          </p>
-
-          <button className="btn btn-primary" onClick={() => setIsSeriesModalOpen(true)} style={{ padding: '0.85rem 2rem' }}>
-            <Plus size={18} />
-            Create Your First Series
-          </button>
-        </main>
-      ) : (
-        <div style={{ display: 'flex', gap: '1.5rem', flex: 1, position: 'relative', zIndex: 2 }}>
-          {selectedSeries && (
-            <EpisodeList
-              series={selectedSeries}
-              episodes={episodes}
-              selectedEpisodeId={selectedEpisode?.id || null}
-              onSelectEpisode={(ep) => handleSelectEpisode(ep.id)}
-              onCreateEpisode={handleCreateEpisode}
-              onDeleteEpisode={handleDeleteEpisode}
+        {/* Main Content Area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--ink-muted)' }}>
+              <RotateCw size={32} className="spin" style={{ marginBottom: '1rem', color: 'var(--accent-red)' }} />
+              <div>Loading PocketVerse Command Center...</div>
+            </div>
+          ) : !selectedSeriesId ? (
+            <div className="panel" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
+              <h2>Welcome to PocketVerse</h2>
+              <p className="text-muted" style={{ margin: '1rem 0 1.5rem 0' }}>
+                Create your first serialized story to unlock AI continuity reviews and audio production.
+              </p>
+              <button className="btn btn-primary" onClick={() => setIsSeriesModalOpen(true)}>
+                <PlusCircle size={16} /> Create Series
+              </button>
+            </div>
+          ) : !currentEpisode ? (
+            <div className="panel" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
+              <h2>No Episode Selected</h2>
+              <p className="text-muted" style={{ margin: '1rem 0 1.5rem 0' }}>
+                Select an episode from the sidebar or create a new episode to start writing.
+              </p>
+              <button className="btn btn-primary" onClick={handleCreateEpisode}>
+                <PlusCircle size={16} /> Add Episode 1
+              </button>
+            </div>
+          ) : isWizardOpen ? (
+            <WizardContainer
+              episode={currentEpisode}
+              allEpisodes={seriesData?.episodes || []}
+              initialStep={wizardStartStep}
+              onClose={() => setIsWizardOpen(false)}
+              onComplete={handleWizardComplete}
+            />
+          ) : currentEpisode.status === 'finalized' ? (
+            <FinishedEpisodeView
+              episode={currentEpisode}
+              seriesTitle={seriesData?.title || 'Series'}
+              analysisRun={latestAnalysis}
+              onBackToEditor={() => setIsWizardOpen(true)}
+            />
+          ) : (
+            <EpisodeEditor
+              episode={currentEpisode}
+              onUpdateTitle={handleUpdateTitle}
+              onUpdateScript={handleUpdateScript}
+              onSaveDraft={handleSaveDraft}
+              onLaunchWizard={handleLaunchWizard}
             />
           )}
-
-          {selectedEpisode ? (
-            viewMode === 'reader' ? (
-              <FinishedEpisodeView
-                episode={selectedEpisode}
-                seriesTitle={selectedSeries?.title || ''}
-                analysisRun={selectedEpisode.analysis_run}
-                onBackToEditor={() => setViewMode('editor')}
-              />
-            ) : (
-              <EpisodeEditor
-                episode={selectedEpisode}
-                onSaveContent={handleSaveEpisodeContent}
-                onLaunchWizard={() => setIsWizardOpen(true)}
-                onViewFinalized={() => setViewMode('reader')}
-              />
-            )
-          ) : (
-            <main className="panel" style={{ flex: 1, textAlign: 'center', padding: '4rem 2rem', color: 'var(--ink-muted)' }}>
-              <p>No episode selected. Choose an episode from the sidebar or click "Add Episode".</p>
-            </main>
-          )}
         </div>
+      </div>
+
+      {/* Series Modal */}
+      {isSeriesModalOpen && (
+        <SeriesModal
+          onClose={() => setIsSeriesModalOpen(false)}
+          onCreate={handleCreateSeries}
+        />
       )}
 
-      <SeriesModal
-        isOpen={isSeriesModalOpen}
-        onClose={() => setIsSeriesModalOpen(false)}
-        onCreateSeries={handleCreateSeries}
-      />
-
-      {isWizardOpen && selectedEpisode && (
-        <WizardContainer
-          episode={selectedEpisode}
-          onClose={() => setIsWizardOpen(false)}
-          onFinished={handleWizardFinished}
+      {/* Audio Studio Modal */}
+      {isAudioStudioOpen && audioTargetEpisode && (
+        <AudioStudioModal
+          episode={audioTargetEpisode}
+          seriesTitle={seriesData?.title || 'Series'}
+          onClose={() => {
+            setIsAudioStudioOpen(false);
+            setAudioTargetEpisode(null);
+          }}
+          onEpisodeUpdated={async () => {
+            if (selectedSeriesId) await loadSeriesDetails(selectedSeriesId);
+            if (selectedEpisodeId) await loadEpisodeDetails(selectedEpisodeId);
+          }}
         />
       )}
     </div>
   );
-};
+}
+
+export default App;

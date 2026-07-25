@@ -1,100 +1,83 @@
-import { Series, Episode, ContinuityResult, GrammarIssue, ToneRemixResult } from '../types';
+import { PerformanceBrief } from '../types';
 
 const API_BASE = '/api';
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let errorMsg = `HTTP Error ${res.status}`;
+export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${url}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let message = `API Request Failed (${response.status})`;
     try {
-      const errJson = await res.json();
-      if (errJson && errJson.error) {
-        errorMsg = errJson.error;
-      }
-    } catch (_) {}
-    throw new Error(errorMsg);
+      const parsed = JSON.parse(errorText);
+      if (parsed.error) message = parsed.error;
+    } catch (e) {
+      if (errorText) message = errorText;
+    }
+    throw new Error(message);
   }
-  return res.json() as Promise<T>;
+
+  return response.json();
 }
 
-export async function fetchSeriesList(): Promise<Series[]> {
-  const res = await fetch(`${API_BASE}/series`);
-  return handleResponse<Series[]>(res);
-}
+export const api = {
+  // Series
+  getAllSeries: () => fetchJson<any[]>('/series'),
+  getSeriesById: (id: string) => fetchJson<any>(`/series/${id}`),
+  createSeries: (data: { title: string; description?: string }) =>
+    fetchJson<any>('/series', { method: 'POST', body: JSON.stringify(data) }),
 
-export async function createSeries(title: string): Promise<Series> {
-  const res = await fetch(`${API_BASE}/series`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
-  });
-  return handleResponse<Series>(res);
-}
+  // Episodes
+  createEpisode: (seriesId: string, data: { title: string; content?: string }) =>
+    fetchJson<any>(`/series/${seriesId}/episodes`, { method: 'POST', body: JSON.stringify(data) }),
+  getEpisodeById: (id: string) => fetchJson<any>(`/episodes/${id}`),
+  updateEpisode: (id: string, data: { title?: string; content?: string; status?: string }) =>
+    fetchJson<any>(`/episodes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEpisode: (id: string) => fetchJson<any>(`/episodes/${id}`, { method: 'DELETE' }),
 
-export async function fetchSeriesById(id: string): Promise<Series> {
-  const res = await fetch(`${API_BASE}/series/${id}`);
-  return handleResponse<Series>(res);
-}
+  // Wizard Analysis Pipeline
+  runContinuity: (episodeId: string) =>
+    fetchJson<any>(`/episodes/${episodeId}/analysis/continuity`, { method: 'POST' }),
+  runGrammar: (episodeId: string) =>
+    fetchJson<any>(`/episodes/${episodeId}/analysis/grammar`, { method: 'POST' }),
+  runToneRemix: (episodeId: string, category: string) =>
+    fetchJson<any>(`/episodes/${episodeId}/analysis/tone`, {
+      method: 'POST',
+      body: JSON.stringify({ category }),
+    }),
+  saveAndPublishText: (episodeId: string, finalContent?: string) =>
+    fetchJson<any>(`/episodes/${episodeId}/analysis/save`, {
+      method: 'POST',
+      body: JSON.stringify({ finalContent }),
+    }),
 
-export async function createEpisode(seriesId: string, title: string, content: string): Promise<Episode> {
-  const res = await fetch(`${API_BASE}/series/${seriesId}/episodes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, content }),
-  });
-  return handleResponse<Episode>(res);
-}
-
-export async function fetchEpisodeById(id: string): Promise<Episode & { series_title: string; analysis_run?: any }> {
-  const res = await fetch(`${API_BASE}/episodes/${id}`);
-  return handleResponse<any>(res);
-}
-
-export async function updateEpisode(id: string, title: string, content: string): Promise<Episode> {
-  const res = await fetch(`${API_BASE}/episodes/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, content }),
-  });
-  return handleResponse<Episode>(res);
-}
-
-export async function deleteEpisode(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/episodes/${id}`, { method: 'DELETE' });
-  await handleResponse<{ message: string }>(res);
-}
-
-// Wizard API Calls
-export async function runContinuityAnalysis(episodeId: string): Promise<{ analysis_run_id: string; continuity_result: ContinuityResult }> {
-  const res = await fetch(`${API_BASE}/episodes/${episodeId}/analysis/continuity`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return handleResponse<any>(res);
-}
-
-export async function runGrammarAnalysis(episodeId: string, currentContent?: string): Promise<{ analysis_run_id: string; grammar_result: GrammarIssue[] }> {
-  const res = await fetch(`${API_BASE}/episodes/${episodeId}/analysis/grammar`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ current_content: currentContent }),
-  });
-  return handleResponse<any>(res);
-}
-
-export async function runToneRemix(episodeId: string, category: string, currentContent?: string): Promise<{ analysis_run_id: string; tone_remix_result: ToneRemixResult }> {
-  const res = await fetch(`${API_BASE}/episodes/${episodeId}/analysis/tone`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ category, current_content: currentContent }),
-  });
-  return handleResponse<any>(res);
-}
-
-export async function saveAnalysis(episodeId: string, finalContent: string): Promise<{ message: string; episode: Episode }> {
-  const res = await fetch(`${API_BASE}/episodes/${episodeId}/analysis/save`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ final_content: finalContent }),
-  });
-  return handleResponse<any>(res);
-}
+  // Audio Production Pipeline
+  getAudioDirection: (episodeId: string) =>
+    fetchJson<{ episode_id: string; tone_category: string; performance_brief: PerformanceBrief }>(
+      `/episodes/${episodeId}/audio/direction`,
+      { method: 'POST' }
+    ),
+  generateAudio: (episodeId: string, performance_brief?: PerformanceBrief) =>
+    fetchJson<{ message: string; audio_status: string; render: any }>(
+      `/episodes/${episodeId}/audio/generate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ performance_brief }),
+      }
+    ),
+  getAudioStatus: (episodeId: string) =>
+    fetchJson<{ episode_id: string; audio_status: string; published_at: string | null; latest_render: any }>(
+      `/episodes/${episodeId}/audio`
+    ),
+  publishAudio: (episodeId: string) =>
+    fetchJson<{ message: string; episode_id: string; audio_status: string; published_at: string }>(
+      `/episodes/${episodeId}/audio/publish`,
+      { method: 'POST' }
+    ),
+};
