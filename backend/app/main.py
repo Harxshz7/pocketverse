@@ -17,7 +17,7 @@ from .config import settings
 from .database import async_session, get_db, init_db
 from . import memory_graph, models
 from .extraction import extract_story_elements
-from .explanation import explain_finding, explain_findings
+from .explanation import explain_findings
 from .schemas import (
     EpisodeCreate,
     EpisodeListItem,

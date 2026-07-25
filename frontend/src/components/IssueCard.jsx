@@ -85,6 +85,14 @@ export default function IssueCard({ issue, onResolve }) {
             <span className="text-verse-text-muted text-xs mono uppercase tracking-wider">
               {category.label}
             </span>
+            {issue.persona_tag && (
+              <>
+                <span className="text-verse-text-muted/50">•</span>
+                <span className="text-verse-red/80 text-xs mono uppercase tracking-wider">
+                  {issue.persona_tag}
+                </span>
+              </>
+            )}
           </div>
           <p className={`
             text-sm leading-relaxed

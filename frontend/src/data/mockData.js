@@ -181,6 +181,7 @@ export const mockIssues = [
     ],
     resolved: false,
     resolved_evidence: null,
+    persona_tag: "Character Expert",
   },
   {
     id: "issue-002",
@@ -205,12 +206,12 @@ export const mockIssues = [
     reasoning: "The story establishes a clear world rule in Episode 2: the sea never returns the dead. Episode 3 then has a body wash ashore with the narrator explicitly noting this contradicts the rule. While rule-breaking can be a powerful story device, the text provides no explanation — supernatural, scientific, or conspiratorial — for why this happens. The fishermen react with surprise, but the mechanism is left entirely unexplained.",
     impact: "If this is intentional foreshadowing, it needs at least a hint at the mechanism (the Consortium, the artifact, a broken seal). Without one, it reads as a plot hole rather than a mystery. Listeners in a serialized format will flag this immediately.",
     suggested_fixes: [
-      "Add a line connecting the body's appearance to the approaching equinox or the artifact — 'The equinox was three days away. Perhaps the old protections were already failing.'",
-      "Have Dr. Vorn react with specific knowledge — 'This shouldn't be possible. Unless someone disturbed the seabed anchors...' — hinting at a deliberate Consortium action.",
-      "If this is meant to be unexplained, lean into the horror: have the body show signs that don't match drowning, suggesting it was placed there deliberately.",
+      "Explain the phenomenon (e.g., 'The sea's ancient law was broken, meaning this was no ordinary murder').",
+      "Change the location of the body's discovery so it doesn't violate the established law of New Harbor.",
     ],
     resolved: false,
     resolved_evidence: null,
+    persona_tag: "Director",
   },
   {
     id: "issue-003",
@@ -235,10 +236,11 @@ export const mockIssues = [
     reasoning: "The father's disappearance is the emotional engine of the story. After 3 episodes, we know he's alive (good — keeps the promise active) but Maya hasn't taken any concrete steps to find him. In serialized audio, audiences track these promises closely. The reveal that he's alive resets the clock somewhat, but the next episode needs to show Maya actively pursuing this thread.",
     impact: "If Episode 4 doesn't advance this thread, listeners may feel the promise is being strung along rather than developed. This is the story's emotional core — it can't be a background detail.",
     suggested_fixes: [
-      "End Episode 3 with Maya demanding Rio tell her where her father is hiding — gives the audience a clear 'next episode' hook.",
-      "Have Maya find a clue in Blackwell's journal that connects to her father's location — ties the A-plot and B-plot together.",
+      "In Episode 2, add a scene where Rio faces a situation that shakes his confidence, explaining his cowardly behavior.",
+      "In Episode 1, hint that Rio's bravery is a facade covering deeper fears related to the investigation.",
     ],
     resolved: false,
     resolved_evidence: null,
+    persona_tag: "Narrative Architect",
   },
 ];
