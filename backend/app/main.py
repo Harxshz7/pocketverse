@@ -297,6 +297,7 @@ async def validate_episode_endpoint(
             reasoning=explanation.reasoning,
             impact=explanation.impact,
             suggested_fixes=explanation.suggested_fixes,
+            persona_tag=explanation.persona_tag,
             resolved=False,
         )
         db.add(issue)
@@ -363,6 +364,7 @@ async def revalidate_episode(
             reasoning=explanation.reasoning,
             impact=explanation.impact,
             suggested_fixes=explanation.suggested_fixes,
+            persona_tag=explanation.persona_tag,
             resolved=False,
         )
         db.add(issue)

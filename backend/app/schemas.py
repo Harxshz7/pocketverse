@@ -211,6 +211,7 @@ class ValidationIssueSchema(BaseModel):
     suggested_fixes: list[str] = []
     resolved: bool = False
     resolved_evidence: str | None = None
+    persona_tag: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -324,3 +325,12 @@ class ExplanationOutput(BaseModel):
         default_factory=list,
         description="Actionable fix suggestions for the creator",
     )
+    persona_tag: str = Field(
+        ..., description="Persona tag for report readability (e.g., Director, Editor, Character Expert, Producer)"
+    )
+
+
+class ExplanationBatchOutput(BaseModel):
+    """Structured output from the LLM for a batch of explanations."""
+
+    explanations: list[ExplanationOutput]

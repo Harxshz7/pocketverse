@@ -232,6 +232,7 @@ class ValidationIssue(Base):
     suggested_fixes: Mapped[list] = mapped_column(JSON, default=list)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    persona_tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     episode: Mapped["Episode"] = relationship(back_populates="issues")
