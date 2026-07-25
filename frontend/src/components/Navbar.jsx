@@ -1,11 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { Brain, RadioTower, Radar, Shield, Sparkles, Upload } from 'lucide-react';
+import { Brain, LayoutDashboard, RadioTower, Sparkles } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Home', icon: Radar },
-  { to: '/upload', label: 'Upload', icon: Upload },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/memory', label: 'Story Memory', icon: Brain },
-  { to: '/review', label: 'Review', icon: Shield },
 ];
 
 export default function Navbar() {

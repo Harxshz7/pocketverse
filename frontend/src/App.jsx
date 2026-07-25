@@ -1,9 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import Landing from './pages/Landing';
-import Upload from './pages/Upload';
+import Dashboard from './pages/Dashboard';
 import StoryMemory from './pages/StoryMemory';
-import Review from './pages/Review';
 
 export default function App() {
   return (
@@ -12,10 +10,9 @@ export default function App() {
         <Navbar />
         <main>
           <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/upload" element={<Upload />} />
+            <Route path="/" element={<Dashboard />} />
             <Route path="/memory" element={<StoryMemory />} />
-            <Route path="/review" element={<Review />} />
+            <Route path="*" element={<Dashboard />} />
           </Routes>
         </main>
       </div>
