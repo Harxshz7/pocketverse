@@ -1047,10 +1047,19 @@
     font-size: 0.95rem;
   }
 
-  .btn-secondary:hover {
+  .btn-secondary:hover:not(:disabled) {
     border-color: var(--color-verse-red);
     background: rgba(232, 32, 63, 0.08);
     box-shadow: 0 0 20px rgba(232, 32, 63, 0.1);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: auto;
+    transform: none;
+    box-shadow: none;
+    border-color: var(--color-verse-border);
   }
 
   /* Mono numbers / labels */

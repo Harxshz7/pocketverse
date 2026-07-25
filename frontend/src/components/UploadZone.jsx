@@ -1,19 +1,39 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-export default function UploadZone({ onSubmit, loading = false }) {
+export default function UploadZone({
+  onSubmit,
+  loading = false,
+  defaultEpisodeNumber = 1,
+  serverError = '',
+}) {
   const [title, setTitle] = useState('');
-  const [episodeNumber, setEpisodeNumber] = useState('');
+  const [episodeNumber, setEpisodeNumber] = useState(String(defaultEpisodeNumber));
   const [text, setText] = useState('');
   const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
   const fileInputRef = useRef(null);
 
-  const handleSubmit = () => {
-    if (!title.trim()) return setError('Episode title is required');
-    if (!episodeNumber) return setError('Episode number is required');
-    if (!text.trim()) return setError('Episode text is required');
-    setError('');
+  useEffect(() => {
+    if (defaultEpisodeNumber) {
+      setEpisodeNumber(String(defaultEpisodeNumber));
+    }
+  }, [defaultEpisodeNumber]);
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    setLocalError('');
+
+    if (!episodeNumber || isNaN(parseInt(episodeNumber, 10)) || parseInt(episodeNumber, 10) < 1) {
+      return setLocalError('Please enter a valid episode number (1 or higher).');
+    }
+    if (!title.trim()) {
+      return setLocalError('Please enter an episode title.');
+    }
+    if (!text.trim()) {
+      return setLocalError('Please enter or paste the episode text content.');
+    }
+
     onSubmit({
       number: parseInt(episodeNumber, 10),
       title: title.trim(),
@@ -47,8 +67,10 @@ export default function UploadZone({ onSubmit, loading = false }) {
     }
   };
 
+  const activeError = localError || serverError;
+
   return (
-    <div className="space-y-5 animate-fade-in">
+    <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
       {/* Episode metadata */}
       <div className="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-4">
         <div>
@@ -59,7 +81,10 @@ export default function UploadZone({ onSubmit, loading = false }) {
             type="number"
             min="1"
             value={episodeNumber}
-            onChange={(e) => setEpisodeNumber(e.target.value)}
+            onChange={(e) => {
+              setEpisodeNumber(e.target.value);
+              setLocalError('');
+            }}
             placeholder="1"
             className="input-shell w-full px-3 py-3 text-verse-text mono text-center text-lg focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
           />
@@ -71,8 +96,11 @@ export default function UploadZone({ onSubmit, loading = false }) {
           <input
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Episode title..."
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setLocalError('');
+            }}
+            placeholder="e.g. Shadows over Eldoria"
             className="input-shell w-full px-4 py-3 text-verse-text focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
           />
         </div>
@@ -112,7 +140,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
                 Drop a text file or click to browse
               </p>
               <p className="text-verse-text-muted text-sm mt-1">
-                The textarea below stays editable after upload.
+                Accepts .txt files or paste directly into the textarea below.
               </p>
             </div>
           </div>
@@ -130,6 +158,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
               </p>
             </div>
             <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); setText(''); }}
               className="ml-auto text-verse-text-muted hover:text-verse-red text-xs mono"
             >
@@ -142,31 +171,34 @@ export default function UploadZone({ onSubmit, loading = false }) {
       {/* Text paste area */}
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          setLocalError('');
+        }}
         placeholder="Or paste your episode text here..."
-        rows={10}
+        rows={8}
         className="input-shell w-full px-4 py-3 text-verse-text text-sm leading-relaxed resize-y focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all placeholder:text-verse-text-muted/50"
       />
 
-      {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 text-verse-red text-sm animate-fade-in">
-          <AlertCircle size={14} />
-          {error}
+      {/* Error display */}
+      {activeError && (
+        <div className="p-3.5 rounded-xl bg-verse-red-dim/60 border border-verse-red/30 flex items-center gap-2.5 text-verse-red text-sm animate-fade-in">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{activeError}</span>
         </div>
       )}
 
-      {/* Submit */}
+      {/* Submit button */}
       <div className="flex justify-end">
         <button
-          onClick={handleSubmit}
-          disabled={loading || !text.trim()}
+          type="submit"
+          disabled={loading}
           className="btn-primary"
         >
           {loading ? (
             <>
-              <div className="spinner !w-4 !h-4 !border-white/30 !border-t-white" />
-              Processing...
+              <div className="spinner !w-4 !h-4 !border-white/30 !border-t-white animate-spin" />
+              Ingesting Episode...
             </>
           ) : (
             <>
@@ -176,6 +208,6 @@ export default function UploadZone({ onSubmit, loading = false }) {
           )}
         </button>
       </div>
-    </div>
+    </form>
   );
 }

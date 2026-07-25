@@ -401,6 +401,31 @@ async def startup():
 # ---------------------------------------------------------------------------
 
 
+@app.get("/")
+async def root():
+    """Backend service discovery endpoint."""
+    return {
+        "service": "StoryGuard API",
+        "status": "ok",
+        "version": "0.2.0",
+        "docs": "/docs",
+        "health": "/health",
+        "api": "/api/v1",
+    }
+
+
+@app.get("/api/v1")
+async def api_root():
+    """API v1 discovery endpoint."""
+    return {
+        "service": "StoryGuard API",
+        "version": "v1",
+        "health": "/api/v1/health",
+        "episodes": "/api/v1/episodes",
+        "story_memory": "/api/v1/story-memory",
+    }
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""

@@ -203,6 +203,12 @@ export default function Dashboard() {
     resolved: issues.filter((issue) => issue.resolved).length,
   }), [episodes.length, issues]);
 
+  const nextEpisodeNumber = useMemo(() => {
+    if (episodes.length === 0) return 1;
+    const numbers = episodes.map((e) => e.number || 0);
+    return Math.max(...numbers, 0) + 1;
+  }, [episodes]);
+
   const canGenerateFinal = issues.some((issue) =>
     !issue.resolved && issue.patch_decision?.action === 'accept_variant'
   );
@@ -372,7 +378,12 @@ export default function Dashboard() {
                       Text only: episode number, title, and body.
                     </p>
                   </div>
-                  <UploadZone onSubmit={handleAddEpisode} loading={savingEpisode} />
+                  <UploadZone
+                    onSubmit={handleAddEpisode}
+                    loading={savingEpisode}
+                    defaultEpisodeNumber={nextEpisodeNumber}
+                    serverError={error}
+                  />
                 </div>
               </section>
             )}
@@ -401,6 +412,7 @@ export default function Dashboard() {
                         onClick={handleGenerateFinal}
                         disabled={!canGenerateFinal || finalLoading}
                         className="btn-secondary"
+                        title={!canGenerateFinal ? 'Accept at least one rewrite variant first to generate a final version' : 'Generate final cleaned episode version'}
                       >
                         {finalLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                         Generate Final Story
