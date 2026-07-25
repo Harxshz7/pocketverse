@@ -5,6 +5,8 @@ import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import { getAllAudioBase64 } from 'google-tts-api';
+import ffmpegPath from 'ffmpeg-static';
 import { dbGet, dbRun } from '../db/schema';
 
 const execAsync = promisify(exec);
@@ -22,11 +24,20 @@ export interface PacingNote {
   emphasis?: 'none' | 'moderate' | 'strong';
 }
 
+export interface SoundCue {
+  paragraph_index: number;
+  location_setting: string;
+  ambient_soundscape: string;
+  foley_effects: string[];
+  mood_tag: string;
+}
+
 export interface PerformanceBrief {
   voice_id: string;
   voice_name?: string;
   voice_settings: VoiceSettings;
   pacing_notes: PacingNote[];
+  soundscape_cues?: SoundCue[];
   ambience_description: string;
   ambience_volume_db: number;
 }
@@ -46,15 +57,6 @@ const PUBLIC_AUDIO_DIR = path.join(__dirname, '../../public/audio');
 if (!fs.existsSync(PUBLIC_AUDIO_DIR)) {
   fs.mkdirSync(PUBLIC_AUDIO_DIR, { recursive: true });
 }
-
-// Premade ElevenLabs Voice IDs compatible with Free & Paid API accounts
-const PREMADE_VOICES = {
-  rachel: '21m00Tcm4TlvDq8ikWAM', // Rachel / Baritone / Dramatic
-  josh: 'TxGEqnHWrfWFTfGW9XjX',   // Josh / Deep Male
-  bella: 'EXAVITQu4vr4xnSDxMaL',  // Bella / Synth / Sci-Fi
-  adam: 'pNInz6obpgDQGcFmaJgB',   // Adam / Dynamic / Comedy
-  elli: 'MF3mGyEYCl7XYWbV9V6O',   // Elli / Emotional
-};
 
 function getOpenAIClient(): OpenAI | null {
   const backendEnvPath = path.join(__dirname, '../../.env');
@@ -78,44 +80,85 @@ function getOpenAIClient(): OpenAI | null {
 
 export class AudioService {
   /**
-   * PHASE 2: Generate Audio Performance Brief using 20+ Yr Technical Audio Director Persona
+   * Select best OpenAI Male Voice based on story genre & tone
+   */
+  static selectBestMaleOpenAIVoice(toneCategory: string): { voice: 'onyx' | 'echo' | 'fable' | 'alloy'; name: string } {
+    const cat = (toneCategory || '').toLowerCase();
+    if (cat.includes('horror') || cat.includes('dark') || cat.includes('mystery') || cat.includes('noir')) {
+      return { voice: 'onyx', name: 'Onyx Deep Authoritative Male Baritone' };
+    }
+    if (cat.includes('cyberpunk') || cat.includes('sci-fi') || cat.includes('drama') || cat.includes('thriller')) {
+      return { voice: 'echo', name: 'Echo Resonant Cinematic Male Storyteller' };
+    }
+    if (cat.includes('comedy') || cat.includes('funny') || cat.includes('adventure')) {
+      return { voice: 'fable', name: 'Fable Expressive Dynamic Male Storyteller' };
+    }
+    return { voice: 'onyx', name: 'Onyx Deep Authoritative Male Baritone' };
+  }
+
+  /**
+   * PHASE 2: Generate Audio Performance Brief & Foley Soundscape Cues using Technical Audio Director Persona
    */
   static async generatePerformanceBrief(episode: { id: string; title: string; content: string }, toneCategory: string): Promise<PerformanceBrief> {
     const openai = getOpenAIClient();
+    const voiceSelection = AudioService.selectBestMaleOpenAIVoice(toneCategory);
     const category = (toneCategory || 'Drama').toLowerCase();
 
-    // Default Voice Archetype Presets per Tone Category using standard ElevenLabs premade voices
-    let defaultVoiceId = PREMADE_VOICES.josh; // Deep Male Baritone
-    let defaultVoiceName = 'Marcus Noir Baritone';
-    let defaultAmbience = 'Rain slicked streets with distant thunder and city hum';
+    let defaultAmbience = 'Natural wind breeze whispering through dark trees with subtle ambient warmth';
     let defaultVolumeDb = -18;
     let defaultSettings: VoiceSettings = { stability: 0.45, similarity_boost: 0.85, style: 0.55, use_speaker_boost: true };
 
     if (category.includes('horror')) {
-      defaultVoiceId = PREMADE_VOICES.adam; // Adam / Deep Whispering
-      defaultVoiceName = 'Shadow Whispering Narrator';
-      defaultAmbience = 'Eerie wind howling through old ruins with unsettling creaks';
-      defaultVolumeDb = -22;
+      defaultAmbience = 'Eerie wind breeze howling gently through old ruins with subtle banyan tree creaks';
+      defaultVolumeDb = -18;
       defaultSettings = { stability: 0.35, similarity_boost: 0.90, style: 0.75, use_speaker_boost: true };
     } else if (category.includes('cyberpunk') || category.includes('sci-fi')) {
-      defaultVoiceId = PREMADE_VOICES.bella; // Bella / Synth
-      defaultVoiceName = 'Neon Synth Modulated Narrator';
-      defaultAmbience = 'Low frequency sub-bass hum with digital static and neon glare drones';
+      defaultAmbience = 'Low frequency sub-bass hum with digital static, vehicle sirens, and neon glare drones';
       defaultVolumeDb = -16;
       defaultSettings = { stability: 0.60, similarity_boost: 0.80, style: 0.40, use_speaker_boost: true };
     } else if (category.includes('funny') || category.includes('comedy')) {
-      defaultVoiceId = PREMADE_VOICES.rachel; // Rachel / Expressive
-      defaultVoiceName = 'Dynamic Expressive Narrator';
       defaultAmbience = 'Light upbeat acoustic rhythm with subtle comedic room tones';
       defaultVolumeDb = -20;
       defaultSettings = { stability: 0.50, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true };
     } else if (category.includes('noir')) {
-      defaultVoiceId = PREMADE_VOICES.josh;
-      defaultVoiceName = 'Gravelly Trench-Coat Baritone';
-      defaultAmbience = 'Midnight neon pavement rain with foghorns in the bay';
+      defaultAmbience = 'Midnight neon pavement rain with city traffic hum and foghorns in the bay';
       defaultVolumeDb = -18;
       defaultSettings = { stability: 0.40, similarity_boost: 0.88, style: 0.60, use_speaker_boost: true };
     }
+
+    // Paragraph-based Foley & Soundscape breakdown fallback
+    const paragraphs = episode.content.split(/\n+/).filter(p => p.trim());
+    const defaultSoundCues: SoundCue[] = paragraphs.map((p, idx) => {
+      let setting = 'General Scene Environment';
+      let ambient = defaultAmbience;
+      let foley = ['Subtle Room Ambience', 'Character Footsteps'];
+      let mood = toneCategory;
+
+      if (category.includes('horror') || p.toLowerCase().includes('cremation') || p.toLowerCase().includes('ghost') || p.toLowerCase().includes('vikrama')) {
+        setting = 'Haunted Cremation Ground at Midnight';
+        ambient = 'Eerie wind breezing through bare trees with distant dog barking and crackling dry leaves';
+        foley = ['🐕 Distant Dog Barking', '💨 Eerie Wind Breeze', '🦉 Spectral Owl Hoot', '🪵 Creaking Banyan Tree'];
+        mood = 'Foreboding Horror';
+      } else if (p.toLowerCase().includes('robber') || p.toLowerCase().includes('forest') || p.toLowerCase().includes('attack')) {
+        setting = 'Dense Dark Forest Path';
+        ambient = 'Chilling forest rustle with wind gusting through thick canopy';
+        foley = ['🗡️ Blade Clashing', '👣 Heavy Running Footsteps', '⚡ Thunder Crackle'];
+        mood = 'High Tension Drama';
+      } else if (category.includes('cyberpunk') || category.includes('sci-fi') || p.toLowerCase().includes('city') || p.toLowerCase().includes('neon')) {
+        setting = 'Rain-Slicked Neon City District';
+        ambient = 'Heavy city traffic hum with distant vehicle sirens and rain patter on metal pavement';
+        foley = ['🚗 Distant Vehicle Sirens', '🌧️ Rain Patter on Metal', '⚡ Electric Neon Buzz'];
+        mood = 'Tech-Noir Thriller';
+      }
+
+      return {
+        paragraph_index: idx + 1,
+        location_setting: setting,
+        ambient_soundscape: ambient,
+        foley_effects: foley,
+        mood_tag: mood,
+      };
+    });
 
     // Default Pacing Notes based on text punctuation
     const sentences = episode.content.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -126,44 +169,24 @@ export class AudioService {
     }));
 
     if (openai) {
-      console.log(`[AudioService] 🎧 Generating LLM Performance Brief for Episode: "${episode.title}" (${toneCategory} tone)...`);
+      console.log(`[AudioService] 🎧 Generating Soundscape Cues & Male Voice Brief (${voiceSelection.name}) for Episode: "${episode.title}" (${toneCategory} tone)...`);
       try {
         const prompt = `
-You are a Principal Audio Engineer and Technical Audio Director with 20+ years of experience producing award-winning audio dramas.
-
-YOUR TASK:
-Analyze the submitted episode script ("${episode.title}") in genre tone "${toneCategory}".
-Create a detailed, structured audio performance brief for an automated audio production engine.
-
-SUBMITTED SCRIPT:
+You are a Technical Audio Director. Analyze script "${episode.title}" in tone "${toneCategory}".
+Create brief JSON with soundscape_cues and pacing_notes. Voice model: "${voiceSelection.voice}" (${voiceSelection.name}).
+Script:
 """
-${episode.content}
+${episode.content.substring(0, 3000)}
 """
 
-Requirements:
-1. Select a voice archetype matching "${toneCategory}". Use ElevenLabs voice ID "${defaultVoiceId}" or custom voice.
-2. Define voice parameters: stability (0.1 - 1.0), similarity_boost (0.1 - 1.0), style (0.0 - 1.0), use_speaker_boost (boolean).
-3. Mark key text spans for dramatic pacing pauses (pause_ms between 400ms and 2000ms) and audio emphasis.
-4. Describe a rich background ambience sound effect bed and set ambience_volume_db (how far background sits under narration, e.g. -12dB to -24dB).
-
-Return ONLY a valid JSON object:
+Return JSON:
 {
-  "voice_id": "${defaultVoiceId}",
-  "voice_name": "${defaultVoiceName}",
-  "voice_settings": {
-    "stability": 0.45,
-    "similarity_boost": 0.85,
-    "style": 0.60,
-    "use_speaker_boost": true
-  },
-  "pacing_notes": [
-    {
-      "text_span": "First key sentence or clause",
-      "pause_ms": 1000,
-      "emphasis": "strong" | "moderate" | "none"
-    }
-  ],
-  "ambience_description": "Detailed background sound bed description",
+  "voice_id": "${voiceSelection.voice}",
+  "voice_name": "${voiceSelection.name}",
+  "voice_settings": { "stability": 0.45, "similarity_boost": 0.85, "style": 0.60, "use_speaker_boost": true },
+  "pacing_notes": [{ "text_span": "Opening span", "pause_ms": 1000, "emphasis": "strong" }],
+  "soundscape_cues": [{ "paragraph_index": 1, "location_setting": "Scene Setting", "ambient_soundscape": "Sound bed", "foley_effects": ["💨 Wind Breeze"], "mood_tag": "${toneCategory}" }],
+  "ambience_description": "Overall sound bed",
   "ambience_volume_db": -18
 }
 `;
@@ -171,17 +194,17 @@ Return ONLY a valid JSON object:
         const response = await openai.chat.completions.create({
           model: 'gpt-4o',
           messages: [
-            { role: 'system', content: 'You are a veteran technical audio director for audio dramas. Respond strictly in JSON.' },
+            { role: 'system', content: 'You are a technical audio director. Respond strictly in JSON.' },
             { role: 'user', content: prompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.4,
+          temperature: 0.3,
         });
 
         const parsed = JSON.parse(response.choices[0].message.content || '{}');
         return {
-          voice_id: parsed.voice_id || defaultVoiceId,
-          voice_name: parsed.voice_name || defaultVoiceName,
+          voice_id: parsed.voice_id || voiceSelection.voice,
+          voice_name: parsed.voice_name || voiceSelection.name,
           voice_settings: {
             stability: typeof parsed.voice_settings?.stability === 'number' ? parsed.voice_settings.stability : defaultSettings.stability,
             similarity_boost: typeof parsed.voice_settings?.similarity_boost === 'number' ? parsed.voice_settings.similarity_boost : defaultSettings.similarity_boost,
@@ -189,6 +212,7 @@ Return ONLY a valid JSON object:
             use_speaker_boost: typeof parsed.voice_settings?.use_speaker_boost === 'boolean' ? parsed.voice_settings.use_speaker_boost : defaultSettings.use_speaker_boost,
           },
           pacing_notes: Array.isArray(parsed.pacing_notes) && parsed.pacing_notes.length > 0 ? parsed.pacing_notes : defaultPacingNotes,
+          soundscape_cues: Array.isArray(parsed.soundscape_cues) && parsed.soundscape_cues.length > 0 ? parsed.soundscape_cues : defaultSoundCues,
           ambience_description: parsed.ambience_description || defaultAmbience,
           ambience_volume_db: typeof parsed.ambience_volume_db === 'number' ? parsed.ambience_volume_db : defaultVolumeDb,
         };
@@ -198,17 +222,18 @@ Return ONLY a valid JSON object:
     }
 
     return {
-      voice_id: defaultVoiceId,
-      voice_name: defaultVoiceName,
+      voice_id: voiceSelection.voice,
+      voice_name: voiceSelection.name,
       voice_settings: defaultSettings,
       pacing_notes: defaultPacingNotes,
+      soundscape_cues: defaultSoundCues,
       ambience_description: defaultAmbience,
       ambience_volume_db: defaultVolumeDb,
     };
   }
 
   /**
-   * PHASE 1 - 4: Render Full Episode Audio (TTS + SFX + ffmpeg Ducking Mix)
+   * PHASE 1 - 4: Render Full Episode Audio (High-Speed Concurrency parallel OpenAI TTS + Soundscape)
    */
   static async renderAudio(episodeId: string, brief: PerformanceBrief): Promise<AudioRenderRecord> {
     const renderId = uuidv4();
@@ -219,10 +244,8 @@ Return ONLY a valid JSON object:
       throw new Error(`Episode not found: ${episodeId}`);
     }
 
-    // Set episode audio_status to 'generating'
     await dbRun('UPDATE episodes SET audio_status = "generating", updated_at = CURRENT_TIMESTAMP WHERE id = ?', [episodeId]);
 
-    // Initial AudioRender DB row
     await dbRun(`
       INSERT INTO audio_renders (id, episode_id, performance_brief, voice_id, audio_url, duration_seconds, status)
       VALUES (?, ?, ?, ?, ?, ?, 'generating')
@@ -233,74 +256,104 @@ Return ONLY a valid JSON object:
     const audioUrl = `/audio/${filename}`;
 
     try {
-      const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
+      const openai = getOpenAIClient();
       let narrationPath = path.join(PUBLIC_AUDIO_DIR, `narration-${renderId}.mp3`);
-      let ambiencePath = path.join(PUBLIC_AUDIO_DIR, `ambience-${renderId}.mp3`);
+      let ambiencePath = path.join(PUBLIC_AUDIO_DIR, `ambience-${renderId}.wav`);
 
-      // Calculate target duration based on full text word count (approx 2.2 words per sec)
       const wordCount = episode.content.trim().split(/\s+/).filter(Boolean).length;
       const estimatedNarrationDuration = Math.max(15, Math.ceil(wordCount / 2.2));
+      let ttsSuccess = false;
 
-      if (apiKey && apiKey.length > 10) {
-        console.log(`[AudioService] 🎙️ Calling ElevenLabs API for Voice ${brief.voice_id} (Full Text Length: ${episode.content.length} chars, ${wordCount} words)...`);
+      // 1. HIGH-SPEED CONCURRENCY TASK: Parallelize OpenAI Speech Chunking & Wind Soundscape Generation simultaneously!
+      const generateSpeechPromise = (async () => {
+        if (!openai) return false;
+        const maleVoice = (brief.voice_id === 'echo' || brief.voice_id === 'fable' || brief.voice_id === 'alloy') ? brief.voice_id : 'onyx';
+        console.log(`[AudioService] ⚡ High-Speed Concurrency OpenAI Male Voice (${maleVoice}) for ${wordCount} words...`);
+        
         try {
-          await AudioService.callElevenLabsTTS(episode.content, brief, narrationPath, apiKey);
-        } catch (ttsErr: any) {
-          console.warn('[AudioService] ElevenLabs TTS Warning (retrying with premade voice):', ttsErr.message);
-          // Retry with default premade voice or fallback
-          const fallbackBrief = { ...brief, voice_id: PREMADE_VOICES.josh };
-          try {
-            await AudioService.callElevenLabsTTS(episode.content, fallbackBrief, narrationPath, apiKey);
-          } catch (retryErr: any) {
-            console.warn('[AudioService] ElevenLabs API unavailable or free quota exhausted, switching to full synthetic narration generator:', retryErr.message);
-            await AudioService.generateSyntheticNarration(episode.content, brief, narrationPath, estimatedNarrationDuration);
-          }
-        }
+          // Chunk text into <= 3500 character segments
+          const textChunks: string[] = [];
+          const paragraphs = episode.content.split(/\n+/);
+          let currentChunk = '';
 
-        if (brief.ambience_description) {
-          console.log(`[AudioService] 🔊 Calling ElevenLabs SFX API for Ambience: "${brief.ambience_description}"...`);
-          try {
-            await AudioService.callElevenLabsSFX(brief.ambience_description, ambiencePath, apiKey, estimatedNarrationDuration);
-          } catch (sfxErr: any) {
-            await AudioService.generateSyntheticAmbience(brief.ambience_description, ambiencePath, estimatedNarrationDuration);
+          for (const p of paragraphs) {
+            if ((currentChunk + '\n' + p).length > 3500) {
+              if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+              currentChunk = p;
+            } else {
+              currentChunk = currentChunk ? currentChunk + '\n' + p : p;
+            }
           }
+          if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+
+          // PARALLEL SIMULTANEOUS PROMISE CONCURRENCY across all text chunks!
+          const mp3Buffers = await Promise.all(textChunks.map(async (chunkText, index) => {
+            const mp3 = await openai.audio.speech.create({
+              model: 'tts-1',
+              voice: maleVoice as any,
+              input: chunkText,
+              speed: 0.98,
+            });
+            return Buffer.from(await mp3.arrayBuffer());
+          }));
+
+          const fullNarrationBuffer = Buffer.concat(mp3Buffers);
+          fs.writeFileSync(narrationPath, fullNarrationBuffer);
+          console.log(`[AudioService] 🚀 Parallel Concurrency OpenAI Male Voice Complete! Size: ${fullNarrationBuffer.byteLength} bytes.`);
+          return true;
+        } catch (openaiTtsErr: any) {
+          console.warn('[AudioService] OpenAI TTS Warning:', openaiTtsErr?.message || openaiTtsErr);
+          return false;
         }
-      } else {
-        console.log(`[AudioService] ⚠️ ELEVENLABS_API_KEY missing or empty. Generating full audio via server-side sound synthesis engine (${wordCount} words, ~${estimatedNarrationDuration}s)...`);
-        await AudioService.generateSyntheticNarration(episode.content, brief, narrationPath, estimatedNarrationDuration);
-        if (brief.ambience_description) {
-          await AudioService.generateSyntheticAmbience(brief.ambience_description, ambiencePath, estimatedNarrationDuration);
-        }
+      })();
+
+      const generateAmbiencePromise = (async () => {
+        AudioService.generateNaturalWindSoundscape(brief.ambience_description || 'Eerie wind breezing through bare trees', ambiencePath, estimatedNarrationDuration + 5);
+      })();
+
+      // Run TTS generation & Soundscape creation SIMULTANEOUSLY in parallel!
+      const [speechSuccess] = await Promise.all([generateSpeechPromise, generateAmbiencePromise]);
+      ttsSuccess = speechSuccess;
+
+      // Fallback if OpenAI key is unavailable
+      if (!ttsSuccess && !fs.existsSync(narrationPath)) {
+        console.log(`[AudioService] 🗣️ Generating Spoken Audio Narration (${wordCount} words)...`);
+        await AudioService.generateFallbackSpeechNarrationMp3(episode.content, narrationPath);
       }
 
-      // PHASE 4: Server-Side ffmpeg Ducking Mix
-      let finalDuration = estimatedNarrationDuration;
-      if (fs.existsSync(narrationPath) && fs.existsSync(ambiencePath)) {
-        console.log(`[AudioService] 🎛️ Executing ffmpeg Ducking Mix at ${brief.ambience_volume_db}dB...`);
+      // Calculate actual narration duration from the synthesized file size
+      let actualNarrationDuration = estimatedNarrationDuration;
+      try {
+        const narrationStat = fs.statSync(narrationPath);
+        actualNarrationDuration = Math.max(12, Math.ceil(narrationStat.size / 16000));
+      } catch (e) {
+        actualNarrationDuration = estimatedNarrationDuration;
+      }
+
+      // FFMPEG-STATIC LOUD VOICE DUCKING MIX: Boost Male Voice 2.5x (+8dB) & Cap Duration
+      console.log(`[AudioService] 🎛️ ffmpeg-static Mixing Master Track (${actualNarrationDuration}s)...`);
+      if (ffmpegPath && fs.existsSync(narrationPath) && fs.existsSync(ambiencePath)) {
         try {
-          const volumeGain = Math.pow(10, (brief.ambience_volume_db || -18) / 20).toFixed(3);
-          const ffmpegCmd = `ffmpeg -y -i "${narrationPath}" -i "${ambiencePath}" -filter_complex "[1:a]volume=${volumeGain},loop=loop=-1:size=2000000[bg];[bg][0:a]amix=inputs=2:duration=first[out]" -map "[out]" "${outputPath}"`;
+          const ffmpegCmd = `"${ffmpegPath}" -y -i "${narrationPath}" -stream_loop -1 -i "${ambiencePath}" -filter_complex "[1:a]volume=0.08[bg];[0:a]volume=2.5[voice];[bg][voice]amix=inputs=2:duration=first:normalize=0[out]" -map "[out]" -t ${actualNarrationDuration} "${outputPath}"`;
           await execAsync(ffmpegCmd);
-        } catch (ffmpegErr: any) {
-          console.warn('[AudioService] ffmpeg command fallback, copying narration audio file directly:', ffmpegErr?.message);
+          console.log(`[AudioService] ✅ Master Track Generated Successfully at ${outputPath}`);
+        } catch (mixErr: any) {
+          console.warn('[AudioService] ffmpeg-static mix fallback:', mixErr?.message);
           fs.copyFileSync(narrationPath, outputPath);
         }
       } else if (fs.existsSync(narrationPath)) {
         fs.copyFileSync(narrationPath, outputPath);
       } else {
-        await AudioService.generateSyntheticNarration(episode.content, brief, outputPath, estimatedNarrationDuration);
+        await AudioService.generateFallbackSpeechNarrationMp3(episode.content, outputPath);
       }
 
-      // Calculate audio duration accurately from file size
+      // Calculate final audio duration accurately from output file size
+      let finalDuration = actualNarrationDuration;
       try {
         const stat = fs.statSync(outputPath);
-        // Bitrate calculation for generated MP3/WAV files
         finalDuration = Math.max(10, Math.round(stat.size / 16000));
-        if (finalDuration < 15 && wordCount > 50) {
-          finalDuration = estimatedNarrationDuration;
-        }
       } catch (e) {
-        finalDuration = estimatedNarrationDuration;
+        finalDuration = actualNarrationDuration;
       }
 
       // Clean up temp files
@@ -314,14 +367,14 @@ Return ONLY a valid JSON object:
         WHERE id = ?
       `, [audioUrl, finalDuration, renderId]);
 
-      // CRITICAL REQUIREMENT: Update episode audio_status to 'ready_to_review' (NEVER 'published')
+      // Update episode audio_status to 'ready_to_review'
       await dbRun(`
         UPDATE episodes 
         SET audio_status = 'ready_to_review', updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
       `, [episodeId]);
 
-      console.log(`[AudioService] ✅ Full Audio Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
+      console.log(`[AudioService] ✅ High-Speed Male Voice Master Render Completed Successfully! File: ${audioUrl} (Duration: ${finalDuration}s). Episode Status: ready_to_review.`);
 
       return {
         id: renderId,
@@ -406,69 +459,39 @@ Return ONLY a valid JSON object:
     };
   }
 
-  // --- ElevenLabs API Helpers ---
+  // --- Fallback Spoken Audio Generator (MP3) ---
 
-  private static async callElevenLabsTTS(text: string, brief: PerformanceBrief, outputPath: string, apiKey: string): Promise<void> {
-    const voiceId = brief.voice_id || PREMADE_VOICES.josh;
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+  private static async generateFallbackSpeechNarrationMp3(text: string, outputPath: string): Promise<void> {
+    try {
+      const cleanText = text.trim() || 'No manuscript text content provided.';
+      const base64Chunks = await getAllAudioBase64(cleanText, {
+        lang: 'en',
+        slow: false,
+        host: 'https://translate.google.com',
+        timeout: 10000,
+      });
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: brief.voice_settings,
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`ElevenLabs TTS Error (${response.status}): ${errText}`);
+      const rawBuffer = Buffer.concat(base64Chunks.map(c => Buffer.from(c.base64, 'base64')));
+      
+      // Pitch shift down by 4 semitones to male register
+      if (ffmpegPath) {
+        const rawPath = outputPath + '.raw.mp3';
+        fs.writeFileSync(rawPath, rawBuffer);
+        await execAsync(`"${ffmpegPath}" -y -i "${rawPath}" -af "asetrate=24000*0.78,aresample=24000,atempo=1.28" "${outputPath}"`);
+        if (fs.existsSync(rawPath)) fs.unlinkSync(rawPath);
+      } else {
+        fs.writeFileSync(outputPath, rawBuffer);
+      }
+    } catch (err: any) {
+      console.error('[AudioService] Fallback Speech Generator Error:', err?.message || err);
     }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(outputPath, buffer);
   }
 
-  private static async callElevenLabsSFX(prompt: string, outputPath: string, apiKey: string, targetDuration: number = 15): Promise<void> {
-    const url = 'https://api.elevenlabs.io/v1/sound-generation';
+  // --- Paul Kellet's Pink Noise Natural Wind Breezing Generator (No Beep Tones!) ---
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        text: prompt,
-        duration_seconds: Math.min(22, Math.max(5, targetDuration)),
-        prompt_influence: 0.5,
-      }),
-    });
-
-    if (!response.ok) {
-      console.warn(`ElevenLabs SFX Warning (${response.status}): Could not fetch SFX, using synthetic bed.`);
-      await AudioService.generateSyntheticAmbience(prompt, outputPath, targetDuration);
-      return;
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(outputPath, buffer);
-  }
-
-  // --- Full Synthetic Audio Generator (Fallback) ---
-
-  private static async generateSyntheticNarration(text: string, brief: PerformanceBrief, outputPath: string, targetDuration?: number): Promise<void> {
+  private static generateNaturalWindSoundscape(prompt: string, outputPath: string, durationSeconds: number = 20): void {
     const sampleRate = 22050;
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-    const duration = targetDuration || Math.max(15, Math.ceil(wordCount / 2.2));
-    const numSamples = sampleRate * duration;
+    const numSamples = sampleRate * durationSeconds;
     const buffer = Buffer.alloc(44 + numSamples * 2);
 
     // WAV Header
@@ -476,45 +499,8 @@ Return ONLY a valid JSON object:
     buffer.writeUInt32LE(36 + numSamples * 2, 4);
     buffer.write('WAVE', 8);
     buffer.write('fmt ', 12);
-    buffer.writeUInt32LE(16, 16);
-    buffer.writeUInt16LE(1, 20); // PCM
-    buffer.writeUInt16LE(1, 22); // Mono
-    buffer.writeUInt32LE(sampleRate, 24);
-    buffer.writeUInt32LE(sampleRate * 2, 28);
-    buffer.writeUInt16LE(2, 32);
-    buffer.writeUInt16LE(16, 34);
-    buffer.write('data', 36);
-    buffer.writeUInt32LE(numSamples * 2, 40);
-
-    // Tone modulation simulating vocal audio speech rhythm
-    let baseFreq = 160;
-    if (brief.voice_name?.toLowerCase().includes('baritone')) baseFreq = 110;
-    if (brief.voice_name?.toLowerCase().includes('synth')) baseFreq = 220;
-
-    for (let i = 0; i < numSamples; i++) {
-      const t = i / sampleRate;
-      // Speech syllable modulation envelope
-      const speechEnv = Math.sin(2 * Math.PI * 4 * t) > 0 ? 0.8 : 0.2;
-      const sample = Math.sin(2 * Math.PI * baseFreq * t) * 0.3 * speechEnv;
-      buffer.writeInt16LE(Math.floor(sample * 32767), 44 + i * 2);
-    }
-
-    fs.writeFileSync(outputPath, buffer);
-  }
-
-  private static async generateSyntheticAmbience(prompt: string, outputPath: string, targetDuration?: number): Promise<void> {
-    const sampleRate = 22050;
-    const duration = targetDuration || 15;
-    const numSamples = sampleRate * duration;
-    const buffer = Buffer.alloc(44 + numSamples * 2);
-
-    // WAV Header
-    buffer.write('RIFF', 0);
-    buffer.writeUInt32LE(36 + numSamples * 2, 4);
-    buffer.write('WAVE', 8);
-    buffer.write('fmt ', 12);
-    buffer.writeUInt32LE(16, 16);
-    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt32LE(16, 16); // PCM
+    buffer.writeUInt16LE(1, 20); // Mono
     buffer.writeUInt16LE(1, 22);
     buffer.writeUInt32LE(sampleRate, 24);
     buffer.writeUInt32LE(sampleRate * 2, 28);
@@ -523,10 +509,45 @@ Return ONLY a valid JSON object:
     buffer.write('data', 36);
     buffer.writeUInt32LE(numSamples * 2, 40);
 
+    const textLower = (prompt || '').toLowerCase();
+    const isHorror = textLower.includes('cremation') || textLower.includes('ghost') || textLower.includes('horror') || textLower.includes('eerie') || textLower.includes('wind');
+    const isCity = textLower.includes('city') || textLower.includes('traffic') || textLower.includes('neon') || textLower.includes('rain');
+
+    // Paul Kellet's Pink Noise Filter (Exact Natural Acoustic Spectrum of Wind Breezing)
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+
     for (let i = 0; i < numSamples; i++) {
-      // Atmospheric ambient noise
-      const noise = (Math.random() * 2 - 1) * 0.05;
-      buffer.writeInt16LE(Math.floor(noise * 32767), 44 + i * 2);
+      const t = i / sampleRate;
+      let sample = 0;
+
+      if (isHorror) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.08;
+        b6 = white * 0.115926;
+
+        // Soft breeze gust modulation (0.07Hz)
+        const breezeSwell = (Math.sin(2 * Math.PI * 0.07 * t) + 1.2) * 0.5;
+        // Warm earth sub-drone (42Hz - NO beep tone)
+        const earthWarmth = Math.sin(2 * Math.PI * 42 * t) * 0.02;
+
+        sample = pink * 0.25 * breezeSwell + earthWarmth;
+      } else if (isCity) {
+        const rainDrop = (Math.random() * 2 - 1) * 0.035;
+        const trafficHum = Math.sin(2 * Math.PI * 68 * t) * 0.05;
+        sample = rainDrop + trafficHum;
+      } else {
+        const roomHum = Math.sin(2 * Math.PI * 55 * t) * 0.03;
+        sample = roomHum;
+      }
+
+      const clamped = Math.max(-0.95, Math.min(0.95, sample));
+      buffer.writeInt16LE(Math.floor(clamped * 32767), 44 + i * 2);
     }
 
     fs.writeFileSync(outputPath, buffer);

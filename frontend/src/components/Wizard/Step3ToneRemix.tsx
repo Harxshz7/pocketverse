@@ -10,7 +10,7 @@ interface Step3ToneRemixProps {
   onContinue: (updatedContent: string) => void;
 }
 
-const CATEGORIES = ['Noir', 'Horror', 'Funny', 'Cyberpunk', 'Drama', 'Sci-Fi'];
+const CATEGORIES = ['Noir', 'Horror', 'Funny', 'Drama', 'Sci-Fi'];
 
 export const Step3ToneRemix: React.FC<Step3ToneRemixProps> = ({
   loading,
@@ -184,7 +184,7 @@ export const Step3ToneRemix: React.FC<Step3ToneRemixProps> = ({
             SELECT A GENRE CATEGORY ABOVE
           </h3>
           <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem', maxWidth: '500px', margin: '0 auto 1.5rem' }}>
-            Choose a genre (Noir, Horror, Funny, Cyberpunk, Drama, Sci-Fi) to generate an atmospheric side-by-side remix preview, or click "Skip Tone Remix".
+            Choose a genre (Noir, Horror, Funny, Drama, Sci-Fi) to generate an atmospheric side-by-side remix preview, or click "Skip Tone Remix".
           </p>
         </div>
       )}

@@ -36,11 +36,20 @@ export interface PacingNote {
   emphasis?: 'none' | 'moderate' | 'strong';
 }
 
+export interface SoundCue {
+  paragraph_index: number;
+  location_setting: string;
+  ambient_soundscape: string;
+  foley_effects: string[];
+  mood_tag: string;
+}
+
 export interface PerformanceBrief {
   voice_id: string;
   voice_name?: string;
   voice_settings: VoiceSettings;
   pacing_notes: PacingNote[];
+  soundscape_cues?: SoundCue[];
   ambience_description: string;
   ambience_volume_db: number;
 }

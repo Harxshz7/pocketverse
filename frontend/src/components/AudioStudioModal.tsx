@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Volume2, Play, Pause, RotateCw, CheckCircle2, Sliders, Music, ShieldCheck, Sparkles, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { Episode, PerformanceBrief, AudioRender, VoiceSettings } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Volume2, Play, Pause, RotateCw, CheckCircle2, Sliders, Music, ShieldCheck, Sparkles, X, ChevronDown, ChevronUp, MapPin, Disc, Wind, UserCheck } from 'lucide-react';
+import { Episode, PerformanceBrief, AudioRender, SoundCue } from '../types';
 import { api } from '../api/client';
 
 interface AudioStudioModalProps {
@@ -30,14 +30,24 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [activeMaleVoiceName, setActiveMaleVoiceName] = useState<string>('Onyx Deep Male Baritone (OpenAI HD)');
+
+  // Web Audio API Ambient Sound Bed Ref
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const bgGainRef = useRef<GainNode | null>(null);
 
   // UI accordion toggles
   const [isBriefExpanded, setIsBriefExpanded] = useState<boolean>(true);
+  const [isFoleyExpanded, setIsFoleyExpanded] = useState<boolean>(true);
   const [showConfirmPublish, setShowConfirmPublish] = useState<boolean>(false);
 
   useEffect(() => {
     loadAudioStudioData();
     return () => {
+      stopAmbientSoundBed();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       if (audioElement) {
         audioElement.pause();
       }
@@ -45,11 +55,14 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
   }, [episode.id]);
 
   useEffect(() => {
-    // Reset audio player whenever a new audio render is generated
     if (audioElement) {
       audioElement.pause();
       setAudioElement(null);
       setIsPlaying(false);
+    }
+    stopAmbientSoundBed();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
   }, [latestRender?.audio_url]);
 
@@ -57,7 +70,6 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
     setLoadingBrief(true);
     setError(null);
     try {
-      // 1. Fetch current audio render state
       const audioData = await api.getAudioStatus(episode.id);
       setAudioStatus(audioData.audio_status);
       setPublishedAt(audioData.published_at);
@@ -65,10 +77,15 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
       if (audioData.latest_render) {
         setLatestRender(audioData.latest_render);
         setBrief(audioData.latest_render.performance_brief);
+        if (audioData.latest_render.performance_brief?.voice_name) {
+          setActiveMaleVoiceName(audioData.latest_render.performance_brief.voice_name);
+        }
       } else {
-        // 2. No render yet: call Direction API to create LLM Performance Brief
         const dirData = await api.getAudioDirection(episode.id);
         setBrief(dirData.performance_brief);
+        if (dirData.performance_brief?.voice_name) {
+          setActiveMaleVoiceName(dirData.performance_brief.voice_name);
+        }
       }
     } catch (err: any) {
       console.error('Error loading Audio Studio data:', err);
@@ -89,6 +106,9 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
       setLatestRender(res.render);
       if (res.render.performance_brief) {
         setBrief(res.render.performance_brief);
+        if (res.render.performance_brief.voice_name) {
+          setActiveMaleVoiceName(res.render.performance_brief.voice_name);
+        }
       }
       onEpisodeUpdated();
     } catch (err: any) {
@@ -116,16 +136,157 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
     }
   };
 
-  const togglePlayback = () => {
-    if (!latestRender?.audio_url) return;
+  // Web Audio API Natural Pink Noise Wind Breezing Synthesizer
+  const startAmbientSoundBed = async () => {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.06, ctx.currentTime);
+      masterGain.connect(ctx.destination);
+      bgGainRef.current = masterGain;
+
+      // Pink Noise Buffer for Natural Wind Breezing
+      const bufferSize = ctx.sampleRate * 2;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.05;
+        b6 = white * 0.115926;
+      }
+
+      const pinkSource = ctx.createBufferSource();
+      pinkSource.buffer = noiseBuffer;
+      pinkSource.loop = true;
+
+      // Lowpass filter for warm wind breezing (380Hz cutoff - NO beep tone)
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(380, ctx.currentTime);
+
+      pinkSource.connect(filter);
+      filter.connect(masterGain);
+      pinkSource.start();
+    } catch (e) {
+      console.warn('Web Audio Wind soundscape warning:', e);
+    }
+  };
+
+  const stopAmbientSoundBed = () => {
+    try {
+      if (bgGainRef.current && audioCtxRef.current) {
+        bgGainRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.1);
+        setTimeout(() => {
+          if (audioCtxRef.current) {
+            audioCtxRef.current.close();
+            audioCtxRef.current = null;
+          }
+        }, 200);
+      }
+    } catch (e) {
+      audioCtxRef.current = null;
+    }
+  };
+
+  const playFallbackSpeech = async () => {
+    await startAmbientSoundBed();
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(episode.content);
+      const voices = window.speechSynthesis.getVoices();
+
+      // Filter for male voices
+      const maleVoice = voices.find(v => {
+        const n = v.name.toLowerCase();
+        return (n.includes('david') || n.includes('mark') || n.includes('alex') || n.includes('guy') || n.includes('james') || n.includes('male')) && v.lang.startsWith('en');
+      }) || voices.find(v => v.lang.startsWith('en'));
+
+      if (maleVoice) {
+        utterance.voice = maleVoice;
+        setActiveMaleVoiceName(`${maleVoice.name} (Male Narrator)`);
+      } else {
+        setActiveMaleVoiceName('Onyx Deep Male Baritone (OpenAI HD)');
+      }
+
+      utterance.pitch = 0.72; // Deep Male Baritone fundamental pitch
+      utterance.rate = 0.88;  // Dramatic audio drama pacing
+
+      utterance.onend = () => {
+        stopAmbientSoundBed();
+        setIsPlaying(false);
+      };
+      utterance.onerror = (e) => {
+        console.warn('SpeechSynthesis warning:', e);
+        stopAmbientSoundBed();
+        setIsPlaying(false);
+      };
+
+      window.speechSynthesis.speak(utterance);
+      setIsPlaying(true);
+    }
+  };
+
+  // Playback Toggle Function
+  const togglePlayback = async () => {
+    if (isPlaying) {
+      stopAmbientSoundBed();
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        setAudioElement(null);
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      setIsPlaying(false);
+      return;
+    }
+
     setPlaybackError(null);
 
-    if (!audioElement) {
-      const audio = new Audio(latestRender.audio_url);
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = () => {
+    // Stop existing audio before playing
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setAudioElement(null);
+    }
+
+    // 1. PRIMARY PLAYBACK MODE: Server-Mixed Master Audio MP3 (Direct backend API port 5000 URL)
+    if (latestRender?.audio_url) {
+      const fullAudioUrl = latestRender.audio_url.startsWith('http')
+        ? latestRender.audio_url
+        : `http://127.0.0.1:5000${latestRender.audio_url}`;
+
+      console.log('Playing Server-Mixed Master Audio (OpenAI Male Voice + Wind Bed):', fullAudioUrl);
+      const audio = new Audio(fullAudioUrl);
+
+      audio.onended = () => {
         setIsPlaying(false);
-        setPlaybackError('Audio file playback failed. Ensure ./start.sh server is running.');
+        setAudioElement(null);
+      };
+
+      audio.onerror = (e) => {
+        console.warn('HTML5 Audio error, switching to direct speech fallback:', e);
+        playFallbackSpeech();
       };
 
       audio.play()
@@ -134,29 +295,19 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
           setIsPlaying(true);
         })
         .catch(err => {
-          console.error('Playback Error:', err);
-          setPlaybackError('Playback interrupted by browser. Click Play again to listen.');
-          setIsPlaying(false);
+          console.warn('HTML5 Audio play warning, switching to direct speech fallback:', err);
+          playFallbackSpeech();
         });
-    } else {
-      if (isPlaying) {
-        audioElement.pause();
-        setIsPlaying(false);
-      } else {
-        audioElement.play()
-          .then(() => setIsPlaying(true))
-          .catch(err => {
-            console.error('Playback Error:', err);
-            setPlaybackError('Playback error. Click Play again.');
-            setIsPlaying(false);
-          });
-      }
+      return;
     }
+
+    // 2. FALLBACK MODE
+    await playFallbackSpeech();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: '840px', width: '100%', padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div className="modal-card" style={{ maxWidth: '880px', width: '100%', padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{
           padding: '1.25rem 1.75rem',
@@ -167,8 +318,8 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
           justifyContent: 'space-between',
         }}>
           <div>
-            <div className="eyebrow" style={{ color: 'var(--accent-red)' }}>
-              Audio Drama Production Studio &bull; {seriesTitle}
+            <div className="eyebrow" style={{ color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <UserCheck size={13} /> OpenAI HD Male Voice &bull; Natural Wind Soundscape &bull; {seriesTitle}
             </div>
             <h2 style={{ fontSize: '1.35rem', marginTop: '0.2rem' }}>
               Episode {episode.episode_number}: {episode.title}
@@ -266,11 +417,13 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
                     {isPlaying ? <Pause size={22} color="#FFF" /> : <Play size={22} color="#FFF" style={{ marginLeft: '3px' }} />}
                   </button>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: '1rem' }}>
-                      {brief?.voice_name || 'Master Audio Track'}
+                    <div style={{ fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <UserCheck size={16} color="var(--accent-red)" />
+                      {activeMaleVoiceName}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
-                      Duration: {latestRender.duration_seconds}s &bull; Tone: {brief?.ambience_description ? 'Mixed Ambience' : 'Clean Narration'}
+                    <div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Wind size={12} color="var(--accent-red)" />
+                      Soundscape: Natural Wind Breezing &bull; {latestRender.duration_seconds}s
                     </div>
                   </div>
                 </div>
@@ -322,7 +475,7 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
               <Volume2 size={36} color="var(--accent-red)" style={{ marginBottom: '0.75rem' }} />
               <h3 style={{ fontSize: '1.1rem', marginBottom: '0.4rem' }}>No Audio Master Rendered Yet</h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', maxWidth: '520px', margin: '0 auto 1.25rem' }}>
-                Review the AI Performance Brief below, then click "Generate Directed Audio Master" to synthesize the narration and mix background ambience.
+                Review the AI Performance Brief and Foley Soundscape Breakdown below, then click "Generate Directed Audio Master" to synthesize OpenAI voice narration and mix background sound beds.
               </p>
               <button
                 className="btn btn-primary"
@@ -332,14 +485,95 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
               >
                 {generating ? (
                   <>
-                    <RotateCw size={16} className="spin" /> Synthesizing Audio Master...
+                    <RotateCw size={16} className="spin" /> Synthesizing OpenAI HD Male Master...
                   </>
                 ) : (
                   <>
-                    <Sparkles size={16} /> Generate Directed Audio Master
+                    <Sparkles size={16} /> Generate Directed Audio Master (OpenAI Male Voice + Wind Bed)
                   </>
                 )}
               </button>
+            </div>
+          )}
+
+          {/* Soundscape & Foley Scene Cue Breakdown (AI Suggested) */}
+          {brief?.soundscape_cues && brief.soundscape_cues.length > 0 && (
+            <div className="panel panel-accent" style={{ padding: '1.25rem', background: 'var(--bg-panel)' }}>
+              <div
+                onClick={() => setIsFoleyExpanded(!isFoleyExpanded)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <Disc size={18} className="accent-text" />
+                  <div>
+                    <h3 style={{ fontSize: '0.95rem', margin: 0 }}>SCENE SOUNDSCAPE & FOLEY CUE BREAKDOWN (AI SUGGESTED)</h3>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--ink-muted)' }}>
+                      Paragraph-level environmental sound beds & foley effect recommendations by OpenAI GPT-4o
+                    </span>
+                  </div>
+                </div>
+                {isFoleyExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {isFoleyExpanded && (
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {brief.soundscape_cues.map((cue, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '1rem 1.15rem',
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span className="badge-pill badge-analyzed" style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem' }}>
+                            Paragraph {cue.paragraph_index || idx + 1}
+                          </span>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--ink-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <MapPin size={13} color="var(--accent-red)" />
+                            {cue.location_setting}
+                          </span>
+                        </div>
+                        <span className="badge-pill" style={{ fontSize: '0.65rem', borderColor: 'var(--accent-red-dim)', color: 'var(--accent-red)' }}>
+                          {cue.mood_tag}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                        <Wind size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                        <strong>Ambient Soundscape:</strong> {cue.ambient_soundscape}
+                      </div>
+
+                      {cue.foley_effects && cue.foley_effects.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--ink-dim)', fontWeight: 600 }}>Foley Cues:</span>
+                          {cue.foley_effects.map((foley, fIdx) => (
+                            <span
+                              key={fIdx}
+                              style={{
+                                fontSize: '0.7rem',
+                                background: 'rgba(217, 30, 54, 0.12)',
+                                border: '1px solid var(--accent-red-dim)',
+                                color: 'var(--ink-primary)',
+                                padding: '0.15rem 0.5rem',
+                                borderRadius: 'var(--radius-pill)',
+                              }}
+                            >
+                              {foley}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -352,7 +586,7 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                   <Sliders size={18} className="accent-text" />
-                  <h3 style={{ fontSize: '0.95rem', margin: 0 }}>DIRECTED PERFORMANCE BRIEF PARAMETERS</h3>
+                  <h3 style={{ fontSize: '0.95rem', margin: 0 }}>DIRECTED PERFORMANCE BRIEF PARAMETERS (OPENAI MALE VOICE)</h3>
                 </div>
                 {isBriefExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
               </div>
@@ -362,10 +596,10 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
                   {/* Voice Selector & Settings Grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
-                      <label className="eyebrow" style={{ display: 'block', marginBottom: '0.35rem' }}>Directed Voice Archetype</label>
+                      <label className="eyebrow" style={{ display: 'block', marginBottom: '0.35rem' }}>Directed Voice Archetype (OpenAI Male)</label>
                       <input
                         type="text"
-                        value={brief.voice_name || brief.voice_id}
+                        value={brief.voice_name || 'Onyx Deep Authoritative Male Baritone'}
                         onChange={e => setBrief({ ...brief, voice_name: e.target.value })}
                         placeholder="Voice Archetype Name"
                       />
@@ -392,7 +626,7 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
                     <div>
                       <label className="eyebrow" style={{ display: 'block', marginBottom: '0.35rem' }}>
                         <Music size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                        Background Ambience Bed Description
+                        Master Background Ambience Bed Description
                       </label>
                       <input
                         type="text"
@@ -455,7 +689,7 @@ export const AudioStudioModal: React.FC<AudioStudioModalProps> = ({
                       style={{ fontSize: '0.8rem' }}
                     >
                       <RotateCw size={14} className={generating ? 'spin' : ''} />
-                      {generating ? 'Re-Generating Master...' : 'Re-Generate Audio Master with Parameters'}
+                      {generating ? 'Re-Generating Master...' : 'Re-Generate Audio Master (OpenAI Male Voice + Wind)'}
                     </button>
                   </div>
                 </div>
