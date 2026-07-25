@@ -1,2 +1,0 @@
-"""HTTP interface for StoryGuard."""
-

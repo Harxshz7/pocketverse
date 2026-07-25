@@ -1,27 +1,6 @@
-# Virtual environment
-venv/
-.venv/
-
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.egg-info/
+node_modules/
 dist/
-build/
-
-# Database
-*.db
-*.sqlite3
-
-# Environment
+data/*.db
+data/*.db-journal
 .env
-.env.example
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+*.log
