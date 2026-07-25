@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Plus, BookOpen, Layers } from 'lucide-react';
+import { Plus, Layers, PlusCircle } from 'lucide-react';
 import { Series } from '../types';
 
 interface HeaderProps {
@@ -7,6 +7,7 @@ interface HeaderProps {
   selectedSeries: Series | null;
   onSelectSeries: (series: Series) => void;
   onOpenNewSeriesModal: () => void;
+  onCreateEpisode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,6 +15,7 @@ export const Header: React.FC<HeaderProps> = ({
   selectedSeries,
   onSelectSeries,
   onOpenNewSeriesModal,
+  onCreateEpisode,
 }) => {
   return (
     <header style={{
@@ -51,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
               POCKET<span style={{ color: 'var(--accent-red)' }}>VERSE</span>
             </h1>
             <div className="eyebrow" style={{ fontSize: '0.6rem', marginTop: '2px', color: 'var(--ink-muted)' }}>
-              Serialized Story Command Center
+              Creator Storytelling Command Center
             </div>
           </div>
         </div>
@@ -60,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
         {seriesList.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--ink-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Series:
+              Active Series:
             </span>
             <select
               value={selectedSeries?.id || ''}
@@ -89,26 +91,19 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Action Controls & Creator Badge */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          padding: '0.35rem 0.75rem',
-          borderRadius: 'var(--radius-pill)',
-          background: 'var(--accent-red-subtle)',
-          border: '1px solid var(--accent-red-dim)',
-          fontSize: '0.7rem',
-          fontWeight: 700,
-          color: 'var(--accent-red)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.12em',
-        }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-red)', boxShadow: '0 0 6px var(--accent-red)' }} />
-          Creator Identity Mode
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {selectedSeries && onCreateEpisode && (
+          <button
+            className="btn btn-primary"
+            onClick={onCreateEpisode}
+            style={{ background: 'var(--accent-red)', borderColor: 'var(--accent-red)', boxShadow: 'var(--shadow-glow)' }}
+          >
+            <PlusCircle size={16} />
+            Add New Episode
+          </button>
+        )}
 
-        <button className="btn btn-primary" onClick={onOpenNewSeriesModal}>
+        <button className="btn btn-outline" onClick={onOpenNewSeriesModal}>
           <Plus size={16} />
           New Series
         </button>

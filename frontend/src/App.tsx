@@ -6,9 +6,10 @@ import { EpisodeEditor } from './components/EpisodeEditor';
 import { FinishedEpisodeView } from './components/FinishedEpisodeView';
 import { WizardContainer } from './components/Wizard/WizardContainer';
 import { AudioStudioModal } from './components/AudioStudioModal';
+import { CreatorDashboard } from './components/CreatorDashboard';
 import { Series, Episode, AnalysisRun } from './types';
 import { api } from './api/client';
-import { RotateCw, PlusCircle } from 'lucide-react';
+import { RotateCw, PlusCircle, LayoutDashboard, FileText } from 'lucide-react';
 
 export function App() {
   const [seriesList, setSeriesList] = useState<Series[]>([]);
@@ -18,6 +19,9 @@ export function App() {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   const [latestAnalysis, setLatestAnalysis] = useState<AnalysisRun | null>(null);
+
+  // View Mode: 'dashboard' | 'editor' | 'wizard' | 'finalized'
+  const [viewMode, setViewMode] = useState<'dashboard' | 'editor' | 'wizard' | 'finalized'>('dashboard');
 
   // View States
   const [isSeriesModalOpen, setIsSeriesModalOpen] = useState<boolean>(false);
@@ -68,13 +72,6 @@ export function App() {
     try {
       const data = await api.getSeriesById(id);
       setSeriesData(data);
-      if (data.episodes && data.episodes.length > 0) {
-        if (!selectedEpisodeId || !data.episodes.find((e: Episode) => e.id === selectedEpisodeId)) {
-          setSelectedEpisodeId(data.episodes[0].id);
-        }
-      } else {
-        setSelectedEpisodeId(null);
-      }
     } catch (err: any) {
       console.error('Failed to load series details:', err);
       setError(err.message || 'Failed to load series details');
@@ -97,6 +94,7 @@ export function App() {
       await loadSeriesList();
       setSelectedSeriesId(newSeries.id);
       setIsSeriesModalOpen(false);
+      setViewMode('dashboard');
     } catch (err: any) {
       console.error('Failed to create series:', err);
       alert(err.message || 'Could not create series');
@@ -106,13 +104,14 @@ export function App() {
   const handleCreateEpisode = async () => {
     if (!selectedSeriesId) return;
     try {
+      const nextEpNumber = (seriesData?.episodes?.length || 0) + 1;
       const newEp = await api.createEpisode(selectedSeriesId, {
-        title: `Episode ${(seriesData?.episodes?.length || 0) + 1}`,
+        title: `Episode ${nextEpNumber}`,
         content: '',
       });
       await loadSeriesDetails(selectedSeriesId);
       setSelectedEpisodeId(newEp.id);
-      setIsWizardOpen(false);
+      setViewMode('editor');
     } catch (err: any) {
       console.error('Failed to create episode:', err);
       alert(err.message || 'Could not create episode');
@@ -126,6 +125,10 @@ export function App() {
       await api.deleteEpisode(episodeId);
       if (selectedSeriesId) {
         await loadSeriesDetails(selectedSeriesId);
+      }
+      if (selectedEpisodeId === episodeId) {
+        setSelectedEpisodeId(null);
+        setViewMode('dashboard');
       }
     } catch (err: any) {
       console.error('Failed to delete episode:', err);
@@ -148,6 +151,7 @@ export function App() {
   const handleLaunchWizard = (step: number = 1) => {
     setWizardStartStep(step);
     setIsWizardOpen(true);
+    setViewMode('wizard');
   };
 
   const handleOpenAudioStudio = (ep: Episode, e?: React.MouseEvent) => {
@@ -158,6 +162,7 @@ export function App() {
 
   const handleWizardComplete = async () => {
     setIsWizardOpen(false);
+    setViewMode('dashboard');
     if (selectedEpisodeId) {
       await loadEpisodeDetails(selectedEpisodeId);
     }
@@ -171,16 +176,52 @@ export function App() {
       <Header
         seriesList={seriesList}
         selectedSeries={seriesData}
-        onSelectSeries={(series: Series) => setSelectedSeriesId(series.id)}
+        onSelectSeries={(series: Series) => {
+          setSelectedSeriesId(series.id);
+          setViewMode('dashboard');
+        }}
         onOpenNewSeriesModal={() => setIsSeriesModalOpen(true)}
+        onCreateEpisode={handleCreateEpisode}
       />
 
-      <div style={{ display: 'flex', gap: '1.5rem', flex: 1, marginTop: '1rem' }}>
+      {/* Creator Navigation Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.65rem' }}>
+          <button
+            className={viewMode === 'dashboard' ? 'btn btn-primary' : 'btn btn-secondary'}
+            onClick={() => setViewMode('dashboard')}
+            style={{ fontSize: '0.8rem', padding: '0.45rem 1rem' }}
+          >
+            <LayoutDashboard size={15} /> Creator Dashboard
+          </button>
+
+          {currentEpisode && (
+            <button
+              className={viewMode === 'editor' ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => setViewMode('editor')}
+              style={{ fontSize: '0.8rem', padding: '0.45rem 1rem' }}
+            >
+              <FileText size={15} /> Edit Episode {currentEpisode.episode_number}: "{currentEpisode.title}"
+            </button>
+          )}
+        </div>
+
+        {seriesData && (
+          <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+            Active Series: <strong>{seriesData.title}</strong> ({seriesData.episodes?.length || 0} Episodes)
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '1.5rem', flex: 1 }}>
         {/* Sidebar */}
         <EpisodeList
           episodes={seriesData?.episodes || []}
           selectedEpisodeId={selectedEpisodeId}
-          onSelectEpisode={setSelectedEpisodeId}
+          onSelectEpisode={(epId) => {
+            setSelectedEpisodeId(epId);
+            setViewMode('editor');
+          }}
           onCreateEpisode={handleCreateEpisode}
           onDeleteEpisode={handleDeleteEpisode}
           onOpenAudioStudio={handleOpenAudioStudio}
@@ -191,49 +232,73 @@ export function App() {
           {loading ? (
             <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--ink-muted)' }}>
               <RotateCw size={32} className="spin" style={{ marginBottom: '1rem', color: 'var(--accent-red)' }} />
-              <div>Loading PocketVerse Command Center...</div>
+              <div>Loading PocketVerse Creator Command Center...</div>
             </div>
-          ) : !selectedSeriesId ? (
-            <div className="panel" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
-              <h2>Welcome to PocketVerse</h2>
-              <p className="text-muted" style={{ margin: '1rem 0 1.5rem 0' }}>
-                Create your first serialized story to unlock AI continuity reviews and audio production.
-              </p>
-              <button className="btn btn-primary" onClick={() => setIsSeriesModalOpen(true)}>
-                <PlusCircle size={16} /> Create Series
-              </button>
-            </div>
-          ) : !currentEpisode ? (
-            <div className="panel" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
-              <h2>No Episode Selected</h2>
-              <p className="text-muted" style={{ margin: '1rem 0 1.5rem 0' }}>
-                Select an episode from the sidebar or create a new episode to start writing.
-              </p>
-              <button className="btn btn-primary" onClick={handleCreateEpisode}>
-                <PlusCircle size={16} /> Add Episode 1
-              </button>
-            </div>
-          ) : isWizardOpen ? (
+          ) : viewMode === 'dashboard' ? (
+            <CreatorDashboard
+              series={seriesData}
+              seriesList={seriesList}
+              selectedEpisodeId={selectedEpisodeId}
+              onSelectSeries={(s) => setSelectedSeriesId(s.id)}
+              onSelectEpisode={(epId) => {
+                setSelectedEpisodeId(epId);
+                setViewMode('editor');
+              }}
+              onCreateEpisode={handleCreateEpisode}
+              onOpenNewSeriesModal={() => setIsSeriesModalOpen(true)}
+              onDeleteEpisode={handleDeleteEpisode}
+              onOpenAudioStudio={handleOpenAudioStudio}
+              onOpenWizard={(ep) => {
+                setSelectedEpisodeId(ep.id);
+                handleLaunchWizard(1);
+              }}
+              onRefreshSeries={async () => {
+                if (selectedSeriesId) await loadSeriesDetails(selectedSeriesId);
+              }}
+            />
+          ) : viewMode === 'wizard' && currentEpisode ? (
             <WizardContainer
               episode={currentEpisode}
               initialStep={wizardStartStep}
-              onClose={() => setIsWizardOpen(false)}
+              onClose={() => setViewMode('dashboard')}
               onComplete={handleWizardComplete}
             />
-          ) : currentEpisode.status === 'finalized' ? (
+          ) : viewMode === 'finalized' && currentEpisode ? (
             <FinishedEpisodeView
               episode={currentEpisode}
               seriesTitle={seriesData?.title || 'Series'}
               analysisRun={latestAnalysis}
-              onBackToEditor={() => setIsWizardOpen(true)}
+              onBackToEditor={() => handleLaunchWizard(1)}
               onOpenAudioStudio={() => handleOpenAudioStudio(currentEpisode)}
             />
-          ) : (
+          ) : currentEpisode ? (
             <EpisodeEditor
               episode={currentEpisode}
               onSaveContent={handleSaveEpisodeContent}
               onLaunchWizard={() => handleLaunchWizard(1)}
-              onViewFinalized={() => setIsWizardOpen(false)}
+              onViewFinalized={() => setViewMode('dashboard')}
+            />
+          ) : (
+            <CreatorDashboard
+              series={seriesData}
+              seriesList={seriesList}
+              selectedEpisodeId={selectedEpisodeId}
+              onSelectSeries={(s) => setSelectedSeriesId(s.id)}
+              onSelectEpisode={(epId) => {
+                setSelectedEpisodeId(epId);
+                setViewMode('editor');
+              }}
+              onCreateEpisode={handleCreateEpisode}
+              onOpenNewSeriesModal={() => setIsSeriesModalOpen(true)}
+              onDeleteEpisode={handleDeleteEpisode}
+              onOpenAudioStudio={handleOpenAudioStudio}
+              onOpenWizard={(ep) => {
+                setSelectedEpisodeId(ep.id);
+                handleLaunchWizard(1);
+              }}
+              onRefreshSeries={async () => {
+                if (selectedSeriesId) await loadSeriesDetails(selectedSeriesId);
+              }}
             />
           )}
         </div>
