@@ -1,118 +1,172 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Shield, Brain, Zap, Radar } from 'lucide-react';
+import {
+  ArrowRight,
+  BrainCircuit,
+  FileText,
+  GitBranch,
+  RadioTower,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
+import CinematicScene from '../components/CinematicScene';
+
+const HERO_METRICS = [
+  { value: '01', label: 'LLM extraction pass' },
+  { value: '05', label: 'deterministic validators' },
+  { value: '100%', label: 'evidence-first review' },
+];
+
+const FEATURES = [
+  {
+    icon: BrainCircuit,
+    title: 'Story Memory Graph',
+    copy: 'Characters, traits, relationships, secrets, promises, world rules, and timeline events are stored as structured memory instead of loose summaries.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Deterministic Validation',
+    copy: 'The engine flags continuity risks with repeatable logic first, then uses the LLM only to explain what the rules already found.',
+  },
+  {
+    icon: RadioTower,
+    title: 'Audio-Series Workflow',
+    copy: 'Designed for serialized Pocket FM style storytelling where small contradictions can break listener trust across dozens of episodes.',
+  },
+];
+
+const WORKFLOW = [
+  { step: '01', title: 'Ingest', desc: 'Drop episode text into the extraction dock.' },
+  { step: '02', title: 'Structure', desc: 'Convert raw scenes into graph-backed memory.' },
+  { step: '03', title: 'Validate', desc: 'Run continuity checks against prior canon.' },
+  { step: '04', title: 'Resolve', desc: 'Review evidence and fix with confidence.' },
+];
 
 export default function Landing() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-[calc(100vh-56px)] flex flex-col">
-      {/* Hero */}
-      <section className="flex-1 flex items-center justify-center px-4 py-20 relative overflow-hidden">
-        {/* Background glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-verse-red/5 blur-[120px] pointer-events-none" />
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full bg-verse-red/8 blur-[80px] pointer-events-none" />
-
-        <div className="relative text-center max-w-3xl mx-auto space-y-8 animate-fade-in">
-          {/* Logo mark */}
-          <div className="relative inline-block">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-verse-red to-verse-red-glow flex items-center justify-center mx-auto shadow-[0_0_60px_rgba(232,32,63,0.3)] mb-6">
-              <Radar size={40} className="text-white" />
+    <div className="page-shell space-y-6">
+      <section className="hero-canvas">
+        <div className="hero-grid">
+          <div className="relative z-10 space-y-8 animate-fade-in">
+            <div className="hero-kicker mono">
+              <Sparkles size={14} className="text-verse-red" />
+              <strong>Pocket FM x OpenAI</strong>
+              <span>Zero to One Hackathon Build</span>
             </div>
-            {/* Glow ring */}
-            <div className="absolute inset-0 -m-4 rounded-3xl border border-verse-red/10 animate-pulse-glow" />
+
+            <div className="space-y-6">
+              <h1 className="hero-title text-verse-text">
+                Catch story bugs before listeners do.
+                <span className="hero-title-mark"> Ship cleaner canon.</span>
+              </h1>
+              <p className="hero-copy">
+                PocketVerse is an AI creator copilot for serialized audio drama. It extracts
+                narrative memory, validates continuity with deterministic rules, and returns
+                evidence-backed fixes creators can act on immediately.
+              </p>
+            </div>
+
+            <div className="hero-actions">
+              <button
+                onClick={() => navigate('/upload')}
+                className="btn-primary text-base px-8 py-3"
+              >
+                Start Episode Scan
+                <ArrowRight size={18} />
+              </button>
+              <button
+                onClick={() => navigate('/review')}
+                className="btn-secondary text-base px-8 py-3"
+              >
+                View Validation Demo
+              </button>
+            </div>
+
+            <div className="hero-metric-grid">
+              {HERO_METRICS.map(({ value, label }) => (
+                <div key={label} className="metric-card">
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Title */}
-          <div className="space-y-3">
-            <h1 className="heading-xl text-verse-text">
-              Pocket<span className="text-verse-red text-glow-red">Verse</span>
-            </h1>
-            <p className="text-xl md:text-2xl text-verse-text-secondary font-light leading-relaxed max-w-xl mx-auto">
-              AI Creator Copilot for serialized audio storytelling.
-              <br />
-              <span className="text-verse-text">
-                Catch continuity errors before your audience does.
-              </span>
+          <CinematicScene variant="home" />
+        </div>
+      </section>
+
+      <section className="section-shell">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-5">
+          <div>
+            <p className="mono text-xs tracking-[0.24em] uppercase text-verse-red mb-2">
+              Built for creators under deadline
+            </p>
+            <h2 className="heading-lg text-verse-text">Production-grade story intelligence</h2>
+          </div>
+          <p className="text-sm text-verse-text-muted max-w-lg">
+            The UI keeps the hackathon narrative honest: LLMs extract and explain,
+            the validation engine decides.
+          </p>
+        </div>
+
+        <div className="feature-grid">
+          {FEATURES.map(({ icon: Icon, title, copy }) => (
+            <article key={title} className="feature-card">
+              <div className="feature-card-icon">
+                <Icon size={24} />
+              </div>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="section-shell">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="feature-card-icon !w-10 !h-10 !rounded-xl">
+            <GitBranch size={20} />
+          </div>
+          <div>
+            <p className="mono text-xs tracking-[0.22em] uppercase text-verse-text-muted">
+              Pipeline
+            </p>
+            <h2 className="heading-md text-verse-text">From raw episode to fixable issue</h2>
+          </div>
+        </div>
+
+        <div className="workflow-grid">
+          {WORKFLOW.map(({ step, title, desc }) => (
+            <article key={step} className="workflow-card">
+              <strong>{step}</strong>
+              <h3>{title}</h3>
+              <p>{desc}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-5 justify-between">
+        <div className="flex items-start gap-4">
+          <div className="feature-card-icon !w-12 !h-12">
+            <Zap size={22} />
+          </div>
+          <div>
+            <h2 className="heading-md text-verse-text">Evidence is the product promise.</h2>
+            <p className="text-sm text-verse-text-muted mt-1 max-w-2xl leading-relaxed">
+              Every issue card points back to episode evidence, reasoning, impact, and
+              creator-ready fixes. No vague hallucinated notes.
             </p>
           </div>
-
-          {/* CTA */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-            <button
-              onClick={() => navigate('/upload')}
-              className="btn-primary text-base px-8 py-3"
-            >
-              Upload Episodes
-              <ArrowRight size={18} />
-            </button>
-            <button
-              onClick={() => navigate('/review')}
-              className="btn-secondary text-base px-8 py-3"
-            >
-              View Demo
-            </button>
-          </div>
-
-          {/* Feature badges */}
-          <div className="flex flex-wrap justify-center gap-4 pt-6">
-            {[
-              { icon: Brain, label: 'Story Memory Graph', desc: 'Structured understanding' },
-              { icon: Shield, label: 'Validation Engine', desc: 'Deterministic checks' },
-              { icon: Zap, label: 'Evidence-Backed', desc: 'Cited, not guessed' },
-            ].map(({ icon: Icon, label, desc }) => (
-              <div
-                key={label}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-verse-surface/60 border border-verse-border/50 backdrop-blur-sm"
-              >
-                <Icon size={18} className="text-verse-red shrink-0" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-verse-text">{label}</p>
-                  <p className="text-xs text-verse-text-muted">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
+        <button onClick={() => navigate('/memory')} className="btn-secondary shrink-0">
+          <FileText size={16} />
+          Inspect Story Memory
+        </button>
       </section>
-
-      {/* How it works */}
-      <section className="px-4 py-16 border-t border-verse-border/30">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="heading-lg text-center text-verse-text mb-10">
-            How It Works
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[
-              { step: '01', title: 'Ingest', desc: 'Upload episode text' },
-              { step: '02', title: 'Extract', desc: 'Build the memory graph' },
-              { step: '03', title: 'Validate', desc: 'Deterministic checks' },
-              { step: '04', title: 'Resolve', desc: 'Fix with evidence' },
-            ].map(({ step, title, desc }, i) => (
-              <div key={step} className="relative group">
-                <div className="card p-5 text-center space-y-2 h-full">
-                  <span className="mono text-3xl font-bold text-verse-red/40 group-hover:text-verse-red transition-colors">
-                    {step}
-                  </span>
-                  <h3 className="font-semibold text-verse-text">{title}</h3>
-                  <p className="text-sm text-verse-text-muted">{desc}</p>
-                </div>
-                {i < 3 && (
-                  <div className="hidden md:block absolute top-1/2 -right-2 text-verse-border z-10">
-                    <ArrowRight size={16} />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="px-4 py-6 border-t border-verse-border/20 text-center">
-        <p className="text-xs text-verse-text-muted">
-          PocketVerse — Built for the Pocket FM &ldquo;Zero to One&rdquo; Hackathon
-        </p>
-      </footer>
     </div>
   );
 }

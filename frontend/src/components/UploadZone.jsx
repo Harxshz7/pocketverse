@@ -2,7 +2,6 @@ import { useState, useRef } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function UploadZone({ onSubmit, loading = false }) {
-  const [mode, setMode] = useState('paste'); // 'paste' | 'drag'
   const [title, setTitle] = useState('');
   const [episodeNumber, setEpisodeNumber] = useState('');
   const [text, setText] = useState('');
@@ -51,7 +50,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Episode metadata */}
-      <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-4">
         <div>
           <label className="block text-xs font-bold tracking-wider text-verse-text-muted uppercase mono mb-2">
             Episode #
@@ -62,7 +61,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
             value={episodeNumber}
             onChange={(e) => setEpisodeNumber(e.target.value)}
             placeholder="1"
-            className="w-full px-3 py-2.5 bg-verse-black border border-verse-border rounded-lg text-verse-text mono text-center text-lg focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
+            className="input-shell w-full px-3 py-3 text-verse-text mono text-center text-lg focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
           />
         </div>
         <div>
@@ -74,7 +73,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Episode title..."
-            className="w-full px-4 py-2.5 bg-verse-black border border-verse-border rounded-lg text-verse-text focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
+            className="input-shell w-full px-4 py-3 text-verse-text focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all"
           />
         </div>
       </div>
@@ -82,10 +81,10 @@ export default function UploadZone({ onSubmit, loading = false }) {
       {/* Drop zone / paste area */}
       <div
         className={`
-          relative border-2 border-dashed rounded-xl p-8 transition-all duration-300 cursor-pointer
+          relative border-2 border-dashed rounded-2xl p-8 md:p-10 transition-all duration-300 cursor-pointer overflow-hidden
           ${dragOver
-            ? 'border-verse-red bg-verse-red/5 shadow-[0_0_30px_rgba(232,32,63,0.15)]'
-            : 'border-verse-border hover:border-verse-border-light'
+            ? 'border-verse-red bg-verse-red/10 shadow-[0_0_40px_rgba(232,32,63,0.18)]'
+            : 'border-verse-border hover:border-verse-red/40'
           }
           ${text ? 'border-verse-green/30' : ''}
         `}
@@ -104,27 +103,35 @@ export default function UploadZone({ onSubmit, loading = false }) {
 
         {!text ? (
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="p-3 rounded-full bg-verse-surface border border-verse-border">
-              <Upload size={24} className="text-verse-text-muted" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(232,32,63,0.14),transparent_18rem)] pointer-events-none" />
+            <div className="relative p-4 rounded-2xl bg-verse-red-dim/40 border border-verse-red/20 shadow-[0_0_32px_rgba(232,32,63,0.12)]">
+              <Upload size={26} className="text-verse-red" />
             </div>
-            <div>
-              <p className="text-verse-text font-medium">
+            <div className="relative">
+              <p className="text-verse-text font-semibold">
                 Drop a text file or click to browse
               </p>
               <p className="text-verse-text-muted text-sm mt-1">
-                Or paste your episode text below
+                The textarea below stays editable after upload.
               </p>
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <CheckCircle2 size={20} className="text-verse-green shrink-0" />
-            <span className="text-verse-green text-sm font-medium">
-              {text.length.toLocaleString()} characters loaded
-            </span>
+          <div className="relative flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-verse-green-dim border border-verse-green/20 flex items-center justify-center glow-green">
+              <CheckCircle2 size={20} className="text-verse-green shrink-0" />
+            </div>
+            <div>
+              <span className="text-verse-green text-sm font-semibold">
+                {text.length.toLocaleString()} characters loaded
+              </span>
+              <p className="text-verse-text-muted text-xs mt-0.5">
+                Ready for structured extraction.
+              </p>
+            </div>
             <button
               onClick={(e) => { e.stopPropagation(); setText(''); }}
-              className="ml-auto text-verse-text-muted hover:text-verse-red text-xs"
+              className="ml-auto text-verse-text-muted hover:text-verse-red text-xs mono"
             >
               Clear
             </button>
@@ -138,7 +145,7 @@ export default function UploadZone({ onSubmit, loading = false }) {
         onChange={(e) => setText(e.target.value)}
         placeholder="Or paste your episode text here..."
         rows={10}
-        className="w-full px-4 py-3 bg-verse-black border border-verse-border rounded-xl text-verse-text text-sm leading-relaxed resize-y focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all placeholder:text-verse-text-muted/50"
+        className="input-shell w-full px-4 py-3 text-verse-text text-sm leading-relaxed resize-y focus:outline-none focus:border-verse-red/50 focus:ring-1 focus:ring-verse-red/20 transition-all placeholder:text-verse-text-muted/50"
       />
 
       {/* Error */}
