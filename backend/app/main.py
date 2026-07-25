@@ -13,10 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
+from .core.request_context import RequestIdMiddleware
 from .database import get_db, init_db
 from . import memory_graph, models
 from .extraction import extract_story_elements
 from .explanation import explain_findings
+from .interfaces.http.api.v1.router import api_v1_router
+from .interfaces.http.errors import register_error_handlers
 from .rewrites import generate_rewrite_variants
 from .schemas import (
     EpisodeCreate,
@@ -350,6 +353,8 @@ app = FastAPI(
     version="0.2.0",
 )
 
+app.add_middleware(RequestIdMiddleware)
+
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -358,6 +363,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+register_error_handlers(app)
+app.include_router(api_v1_router, prefix="/api/v1")
 
 
 @app.on_event("startup")
