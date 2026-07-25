@@ -1,4 +1,4 @@
-"""PocketVerse API — FastAPI application and route definitions.
+"""StoryGuard API - FastAPI application and route definitions.
 
 All endpoints are versioned under /api/v1.
 """
@@ -412,9 +412,9 @@ async def get_episode(episode_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/v1/episodes", response_model=EpisodeResponse, status_code=201)
 async def ingest_episode(body: EpisodeCreate, db: AsyncSession = Depends(get_db)):
-    """Ingest a new episode — triggers extraction and updates the Story Memory Graph.
+    """Ingest a new episode - triggers extraction and updates the Story Memory Graph.
 
-    Pipeline: raw text → LLM extraction → structured graph update.
+    Pipeline: raw text -> LLM extraction -> structured graph update.
     """
     # Check for duplicate episode number
     existing = await memory_graph.get_episode_by_number(db, body.number)
@@ -489,7 +489,7 @@ async def validate_episode_endpoint(
 ):
     """Run the Validation Engine on an episode.
 
-    Pipeline: deterministic checks → evidence retrieval → LLM explanation.
+    Pipeline: deterministic checks -> evidence retrieval -> LLM explanation.
     Returns structured issues with full evidence and explanations.
     """
     episode = await memory_graph.get_episode(db, episode_id)
@@ -685,7 +685,7 @@ async def generate_final_version(
 async def update_episode(
     episode_id: int, body: EpisodeCreate, db: AsyncSession = Depends(get_db)
 ):
-    """Update an episode's text (for the edit → re-validate flow)."""
+    """Update an episode's text (for the edit -> re-validate flow)."""
     episode = await memory_graph.get_episode(db, episode_id)
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")

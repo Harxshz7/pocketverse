@@ -57,9 +57,9 @@ alembic upgrade head
 
 ## Environment Variables
 
-- `OPENAI_API_KEY` — Required for LLM extraction and explanation
-- `DATABASE_URL` — PostgreSQL async URL for production
-- `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` — Async pipeline infrastructure
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` — File storage
-- `JWT_SECRET_KEY` — Signing key for access and refresh tokens
-- `MODEL_NAME`, `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` — AI model configuration
+- `OPENAI_API_KEY` - Required for LLM extraction and explanation
+- `DATABASE_URL` - PostgreSQL async URL for production
+- `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` - Async pipeline infrastructure
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` - File storage
+- `JWT_SECRET_KEY` - Signing key for access and refresh tokens
+- `MODEL_NAME`, `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` - AI model configuration
