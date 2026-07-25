@@ -6,7 +6,9 @@ timeline events, world rules, promises, and secrets in the database.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+import uuid
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import models, schemas
@@ -268,6 +270,49 @@ async def get_episode_by_number(
 
 
 # ---------------------------------------------------------------------------
+# Episode Versions
+# ---------------------------------------------------------------------------
+
+
+async def add_episode_version(
+    db: AsyncSession,
+    episode_id: int,
+    raw_text: str,
+    source: str,
+    validation_status: str,
+) -> models.EpisodeVersion:
+    """Store a new immutable episode text version."""
+    result = await db.execute(
+        select(models.EpisodeVersion)
+        .where(models.EpisodeVersion.episode_id == episode_id)
+        .order_by(models.EpisodeVersion.version_number.desc())
+    )
+    latest = result.scalars().first()
+    version = models.EpisodeVersion(
+        episode_id=episode_id,
+        version_number=(latest.version_number + 1) if latest else 1,
+        raw_text=raw_text,
+        source=source,
+        validation_status=validation_status,
+    )
+    db.add(version)
+    await db.flush()
+    return version
+
+
+async def get_latest_episode_version(
+    db: AsyncSession, episode_id: int
+) -> models.EpisodeVersion | None:
+    """Return the latest assembled version for an episode, if one exists."""
+    result = await db.execute(
+        select(models.EpisodeVersion)
+        .where(models.EpisodeVersion.episode_id == episode_id)
+        .order_by(models.EpisodeVersion.version_number.desc())
+    )
+    return result.scalars().first()
+
+
+# ---------------------------------------------------------------------------
 # Validation Issues
 # ---------------------------------------------------------------------------
 
@@ -299,6 +344,133 @@ async def clear_issues_for_episode(db: AsyncSession, episode_id: int) -> None:
     issues = await get_issues_for_episode(db, episode_id)
     for issue in issues:
         await db.delete(issue)
+    await db.flush()
+
+
+async def get_issue_by_id(
+    db: AsyncSession, issue_id: str
+) -> models.ValidationIssue | None:
+    """Return a validation issue by id."""
+    result = await db.execute(
+        select(models.ValidationIssue).where(models.ValidationIssue.id == issue_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_rewrite_variants_for_issue(
+    db: AsyncSession, issue_id: str
+) -> list[models.RewriteVariant]:
+    """Return rewrite variants for an issue in stable variant order."""
+    result = await db.execute(
+        select(models.RewriteVariant)
+        .where(models.RewriteVariant.issue_id == issue_id)
+        .order_by(models.RewriteVariant.variant_id)
+    )
+    return list(result.scalars().all())
+
+
+async def add_rewrite_variants(
+    db: AsyncSession,
+    issue_id: str,
+    original_span: str,
+    variants: list[schemas.RewriteVariantOutput],
+) -> list[models.RewriteVariant]:
+    """Persist rewrite variants for a single issue."""
+    saved: list[models.RewriteVariant] = []
+    for variant in variants:
+        row = models.RewriteVariant(
+            id=str(uuid.uuid4()),
+            issue_id=issue_id,
+            variant_id=variant.variant_id,
+            original_span=original_span,
+            tone_label=variant.tone_label,
+            rewritten_text=variant.rewritten_text,
+            rationale=variant.rationale,
+        )
+        db.add(row)
+        saved.append(row)
+    await db.flush()
+    return saved
+
+
+async def get_rewrite_variant(
+    db: AsyncSession,
+    issue_id: str,
+    variant_id: str,
+) -> models.RewriteVariant | None:
+    """Return one rewrite variant by public variant id."""
+    result = await db.execute(
+        select(models.RewriteVariant).where(
+            models.RewriteVariant.issue_id == issue_id,
+            models.RewriteVariant.variant_id == variant_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_patch_decision_for_issue(
+    db: AsyncSession, issue_id: str
+) -> models.PatchDecision | None:
+    """Return the writer decision for an issue, if present."""
+    result = await db.execute(
+        select(models.PatchDecision).where(models.PatchDecision.issue_id == issue_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_patch_decisions_for_episode(
+    db: AsyncSession, episode_id: int
+) -> list[models.PatchDecision]:
+    """Return all patch decisions for an episode."""
+    result = await db.execute(
+        select(models.PatchDecision).where(
+            models.PatchDecision.episode_id == episode_id
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def upsert_patch_decision(
+    db: AsyncSession,
+    issue: models.ValidationIssue,
+    action: str,
+    variant: models.RewriteVariant | None = None,
+) -> models.PatchDecision:
+    """Create or replace the writer decision for an issue."""
+    existing = await get_patch_decision_for_issue(db, issue.id)
+    if existing is not None:
+        await db.delete(existing)
+        await db.flush()
+
+    decision = models.PatchDecision(
+        episode_id=issue.episode_id,
+        issue_id=issue.id,
+        variant_db_id=variant.id if variant else None,
+        action=action,
+        original_span=variant.original_span if variant else None,
+        rewritten_text=variant.rewritten_text if variant else None,
+    )
+    db.add(decision)
+    await db.flush()
+    return decision
+
+
+# ---------------------------------------------------------------------------
+# Graph reset / rebuild support
+# ---------------------------------------------------------------------------
+
+
+async def clear_story_memory_graph(db: AsyncSession) -> None:
+    """Clear extracted story facts while preserving episodes, versions, and issues."""
+    for model in (
+        models.Relationship,
+        models.TimelineEvent,
+        models.WorldRule,
+        models.Promise,
+        models.Secret,
+        models.Character,
+    ):
+        await db.execute(delete(model))
     await db.flush()
 
 

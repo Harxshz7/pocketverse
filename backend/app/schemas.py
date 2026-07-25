@@ -197,6 +197,48 @@ class EvidenceItem(BaseModel):
     relevance: str = Field(..., description="Why this passage matters")
 
 
+class RewriteVariantSchema(BaseModel):
+    """A concrete rewrite alternative for an issue evidence span."""
+
+    id: str
+    issue_id: str
+    variant_id: str
+    original_span: str
+    tone_label: str
+    rewritten_text: str
+    rationale: str
+
+    model_config = {"from_attributes": True}
+
+
+class PatchAction(str, enum.Enum):
+    """Writer decision for a validation issue."""
+
+    ACCEPT_VARIANT = "accept_variant"
+    KEEP_ORIGINAL = "keep_original"
+
+
+class PatchDecisionRequest(BaseModel):
+    """Request body for accepting a variant or keeping original text."""
+
+    action: PatchAction
+    variant_id: str | None = None
+
+
+class PatchDecisionSchema(BaseModel):
+    """Persisted writer decision for a single issue."""
+
+    id: int
+    episode_id: int
+    issue_id: str
+    variant_db_id: str | None = None
+    action: PatchAction
+    original_span: str | None = None
+    rewritten_text: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class ValidationIssueSchema(BaseModel):
     """A flagged continuity issue — the core API response shape."""
 
@@ -212,8 +254,35 @@ class ValidationIssueSchema(BaseModel):
     resolved: bool = False
     resolved_evidence: str | None = None
     persona_tag: str | None = None
+    rewrite_variants: list[RewriteVariantSchema] = []
+    patch_decision: PatchDecisionSchema | None = None
 
     model_config = {"from_attributes": True}
+
+
+class EpisodeVersionSchema(BaseModel):
+    """A stored assembled episode version."""
+
+    id: int
+    episode_id: int
+    version_number: int
+    raw_text: str
+    source: str
+    validation_status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FinalVersionResponse(BaseModel):
+    """Response returned after assembling and validating a final version."""
+
+    version: EpisodeVersionSchema
+    original_text: str
+    final_text: str
+    issues: list[ValidationIssueSchema]
+    resolved_count: int
+    remaining_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -334,3 +403,23 @@ class ExplanationBatchOutput(BaseModel):
     """Structured output from the LLM for a batch of explanations."""
 
     explanations: list[ExplanationOutput]
+
+
+# ---------------------------------------------------------------------------
+# Rewrite variant output (LLM-generated)
+# ---------------------------------------------------------------------------
+
+
+class RewriteVariantOutput(BaseModel):
+    """One LLM-generated rewrite alternative."""
+
+    variant_id: str
+    tone_label: str
+    rewritten_text: str
+    rationale: str
+
+
+class RewriteVariantBatchOutput(BaseModel):
+    """Structured output from the LLM for rewrite alternatives."""
+
+    variants: list[RewriteVariantOutput]

@@ -9,12 +9,12 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -90,6 +90,29 @@ class Episode(Base):
     issues: Mapped[list["ValidationIssue"]] = relationship(
         back_populates="episode", cascade="all, delete-orphan"
     )
+    versions: Mapped[list["EpisodeVersion"]] = relationship(
+        back_populates="episode", cascade="all, delete-orphan"
+    )
+
+
+class EpisodeVersion(Base):
+    """A generated episode text version assembled from accepted patches."""
+
+    __tablename__ = "episode_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("episodes.id"), nullable=False
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    episode: Mapped["Episode"] = relationship(back_populates="versions")
 
 
 class Character(Base):
@@ -236,3 +259,59 @@ class ValidationIssue(Base):
 
     # Relationships
     episode: Mapped["Episode"] = relationship(back_populates="issues")
+    rewrite_variants: Mapped[list["RewriteVariant"]] = relationship(
+        back_populates="issue", cascade="all, delete-orphan"
+    )
+    patch_decision: Mapped["PatchDecision | None"] = relationship(
+        back_populates="issue", cascade="all, delete-orphan"
+    )
+
+
+class RewriteVariant(Base):
+    """A concrete rewrite option for a specific validation issue span."""
+
+    __tablename__ = "rewrite_variants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    issue_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("validation_issues.id"), nullable=False
+    )
+    variant_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    original_span: Mapped[str] = mapped_column(Text, nullable=False)
+    tone_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    rewritten_text: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    issue: Mapped["ValidationIssue"] = relationship(back_populates="rewrite_variants")
+
+
+class PatchDecision(Base):
+    """Writer decision for an issue: accept a variant or keep the original."""
+
+    __tablename__ = "patch_decisions"
+    __table_args__ = (
+        UniqueConstraint("issue_id", name="uq_patch_decisions_issue_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("episodes.id"), nullable=False
+    )
+    issue_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("validation_issues.id"), nullable=False
+    )
+    variant_db_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("rewrite_variants.id"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    original_span: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rewritten_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    issue: Mapped["ValidationIssue"] = relationship(back_populates="patch_decision")
+    variant: Mapped["RewriteVariant | None"] = relationship()

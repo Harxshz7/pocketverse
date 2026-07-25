@@ -18,12 +18,18 @@ from .database import async_session, get_db, init_db
 from . import memory_graph, models
 from .extraction import extract_story_elements
 from .explanation import explain_findings
+from .rewrites import generate_rewrite_variants
 from .schemas import (
     EpisodeCreate,
     EpisodeListItem,
     EpisodeResponse,
+    EpisodeVersionSchema,
+    FinalVersionResponse,
+    PatchAction,
+    PatchDecisionRequest,
+    PatchDecisionSchema,
+    RewriteVariantSchema,
     StoryMemoryGraph,
-    ValidationFinding,
     ValidationIssueSchema,
 )
 from .token_logger import get_usage_summary
@@ -38,6 +44,287 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("pocketverse.api")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+async def _extract_episode_facts_into_graph(
+    db: AsyncSession,
+    episode: models.Episode,
+    episode_text: str,
+) -> None:
+    """Run the standard extraction path and persist facts into the graph."""
+    existing_chars = await memory_graph.get_all_characters(db)
+    existing_names = [c.name for c in existing_chars]
+
+    extraction = await extract_story_elements(
+        episode_text=episode_text,
+        episode_number=episode.number,
+        existing_characters=existing_names,
+    )
+
+    for ec in extraction.characters:
+        await memory_graph.get_or_create_character(
+            db,
+            name=ec.name,
+            episode_id=episode.id,
+            traits=ec.traits,
+            motivations=ec.motivations,
+            backstory=ec.backstory,
+        )
+
+    all_chars = await memory_graph.get_all_characters(db)
+    full_name_map = {c.name: c.id for c in all_chars}
+
+    for er in extraction.relationships:
+        a_id = full_name_map.get(er.character_a_name)
+        b_id = full_name_map.get(er.character_b_name)
+        if a_id and b_id:
+            await memory_graph.add_relationship(
+                db, a_id, b_id, er.type, er.description, episode.id
+            )
+
+    all_events = await memory_graph.get_all_timeline_events(db)
+    max_seq = max((e.sequence_order for e in all_events), default=0)
+
+    for et in extraction.timeline_events:
+        char_ids = [
+            full_name_map[name]
+            for name in et.characters_involved
+            if name in full_name_map
+        ]
+        await memory_graph.add_timeline_event(
+            db,
+            episode_id=episode.id,
+            event_description=et.event_description,
+            characters_involved=char_ids,
+            turning_point_type=et.turning_point_type.value if et.turning_point_type else None,
+            sequence_order=max_seq + et.sequence_order,
+        )
+
+    for ew in extraction.world_rules:
+        await memory_graph.add_world_rule(db, ew.rule, episode.id, ew.category)
+
+    for ep in extraction.promises:
+        await memory_graph.add_promise(db, ep.description, episode.id, ep.fulfilled)
+
+    for es in extraction.secrets:
+        holder_id = full_name_map.get(es.holder_name)
+        if holder_id:
+            await memory_graph.add_secret(
+                db, es.description, holder_id, episode.id, es.revealed
+            )
+
+    logger.info(
+        "Extraction complete for ep%d: %d chars, %d rels, %d events, %d rules, %d promises, %d secrets",
+        episode.number,
+        len(extraction.characters),
+        len(extraction.relationships),
+        len(extraction.timeline_events),
+        len(extraction.world_rules),
+        len(extraction.promises),
+        len(extraction.secrets),
+    )
+
+
+async def _latest_episode_text(
+    db: AsyncSession, episode: models.Episode
+) -> str:
+    """Return the latest assembled version text, falling back to the original."""
+    version = await memory_graph.get_latest_episode_version(db, episode.id)
+    return version.raw_text if version else episode.raw_text
+
+
+async def _rebuild_story_memory_graph(db: AsyncSession) -> None:
+    """Rebuild graph facts from original episodes plus latest accepted versions."""
+    await memory_graph.clear_story_memory_graph(db)
+    episodes = await memory_graph.get_all_episodes(db)
+    for episode in episodes:
+        episode_text = await _latest_episode_text(db, episode)
+        await _extract_episode_facts_into_graph(db, episode, episode_text)
+
+
+def _find_patchable_span(
+    issue: models.ValidationIssue,
+    episode: models.Episode,
+    episode_text: str,
+) -> str | None:
+    """Find an exact current-episode quote that can be safely patched."""
+    if issue.status not in {"critical", "needs_review"}:
+        return None
+
+    for evidence in issue.evidence or []:
+        excerpt = (evidence.get("excerpt") or "").strip()
+        if (
+            evidence.get("episode_number") == episode.number
+            and excerpt
+            and excerpt in episode_text
+        ):
+            return excerpt
+    return None
+
+
+async def _ensure_rewrite_variants(
+    db: AsyncSession,
+    issue: models.ValidationIssue,
+    episode: models.Episode,
+    episode_text: str,
+) -> list[models.RewriteVariant]:
+    """Generate and persist variants for eligible issues when missing."""
+    existing = await memory_graph.get_rewrite_variants_for_issue(db, issue.id)
+    if existing:
+        return existing
+
+    original_span = _find_patchable_span(issue, episode, episode_text)
+    if original_span is None:
+        return []
+
+    variants = await generate_rewrite_variants(
+        episode_number=episode.number,
+        episode_title=episode.title,
+        episode_text=episode_text,
+        issue_category=issue.category,
+        issue_status=issue.status,
+        issue_problem=issue.problem,
+        issue_reasoning=issue.reasoning,
+        original_span=original_span,
+    )
+    if not variants:
+        return []
+    return await memory_graph.add_rewrite_variants(db, issue.id, original_span, variants)
+
+
+async def _issue_to_schema(
+    db: AsyncSession,
+    issue: models.ValidationIssue,
+    episode: models.Episode,
+    episode_text: str,
+    ensure_variants: bool = True,
+) -> ValidationIssueSchema:
+    """Build the API issue response including variants and patch decision."""
+    variants = (
+        await _ensure_rewrite_variants(db, issue, episode, episode_text)
+        if ensure_variants
+        else await memory_graph.get_rewrite_variants_for_issue(db, issue.id)
+    )
+    decision = await memory_graph.get_patch_decision_for_issue(db, issue.id)
+
+    schema = ValidationIssueSchema.model_validate(issue)
+    schema.rewrite_variants = [
+        RewriteVariantSchema.model_validate(v) for v in variants
+    ]
+    schema.patch_decision = (
+        PatchDecisionSchema.model_validate(decision) if decision else None
+    )
+    return schema
+
+
+async def _issues_to_schemas(
+    db: AsyncSession,
+    issues: list[models.ValidationIssue],
+    episode: models.Episode,
+    episode_text: str,
+    ensure_variants: bool = True,
+) -> list[ValidationIssueSchema]:
+    return [
+        await _issue_to_schema(db, issue, episode, episode_text, ensure_variants)
+        for issue in issues
+    ]
+
+
+async def _persist_validation_findings(
+    db: AsyncSession,
+    episode: models.Episode,
+    episode_text: str,
+    findings: list,
+) -> list[models.ValidationIssue]:
+    """Explain findings, persist issues, and generate eligible rewrite variants."""
+    explanations = await explain_findings(findings, episode.number)
+    issues: list[models.ValidationIssue] = []
+    for finding, explanation in zip(findings, explanations):
+        issue = models.ValidationIssue(
+            id=str(uuid.uuid4()),
+            episode_id=episode.id,
+            category=finding.category.value,
+            status=finding.status.value,
+            problem=explanation.problem,
+            evidence=[e.model_dump() for e in finding.evidence],
+            reasoning=explanation.reasoning,
+            impact=explanation.impact,
+            suggested_fixes=explanation.suggested_fixes,
+            persona_tag=explanation.persona_tag,
+            resolved=False,
+        )
+        db.add(issue)
+        await db.flush()
+        await _ensure_rewrite_variants(db, issue, episode, episode_text)
+        issues.append(issue)
+    return issues
+
+
+def _mark_unresolved_issues_resolved(
+    issues: list[models.ValidationIssue],
+    resolved_evidence: str,
+) -> int:
+    """Mark existing unresolved issues as resolved and return the count."""
+    count = 0
+    for issue in issues:
+        if not issue.resolved:
+            issue.resolved = True
+            issue.resolved_evidence = resolved_evidence
+            count += 1
+    return count
+
+
+def _apply_accepted_patches(
+    original_text: str,
+    decisions: list[models.PatchDecision],
+) -> str:
+    """Apply accepted patches against their original spans only."""
+    accepted = [
+        d
+        for d in decisions
+        if d.action == PatchAction.ACCEPT_VARIANT.value
+        and d.original_span
+        and d.rewritten_text
+    ]
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="No accepted rewrite variants found for this episode.",
+        )
+
+    replacements: list[tuple[int, int, str, str]] = []
+    for decision in accepted:
+        start = original_text.find(decision.original_span)
+        if start < 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Accepted patch span was not found in the original episode text. "
+                    "Generate variants from an exact original quote before assembling."
+                ),
+            )
+        end = start + len(decision.original_span)
+        replacements.append((start, end, decision.original_span, decision.rewritten_text))
+
+    replacements.sort(key=lambda item: item[0])
+    previous_end = -1
+    for start, end, _, _ in replacements:
+        if start < previous_end:
+            raise HTTPException(
+                status_code=409,
+                detail="Accepted patches overlap and cannot be applied safely.",
+            )
+        previous_end = end
+
+    final_text = original_text
+    for start, end, _, rewritten_text in reversed(replacements):
+        final_text = final_text[:start] + rewritten_text + final_text[end:]
+    return final_text
 
 # ---------------------------------------------------------------------------
 # App
@@ -134,92 +421,10 @@ async def ingest_episode(body: EpisodeCreate, db: AsyncSession = Depends(get_db)
 
     logger.info("Created episode %d: '%s' (id=%d)", body.number, body.title, episode.id)
 
-    # 2. Extract story elements via LLM
-    existing_chars = await memory_graph.get_all_characters(db)
-    existing_names = [c.name for c in existing_chars]
-
-    extraction = await extract_story_elements(
-        episode_text=body.raw_text,
-        episode_number=body.number,
-        existing_characters=existing_names,
-    )
-
-    # 3. Persist extracted elements into the Story Memory Graph
-
-    # Characters
-    char_name_to_id: dict[str, int] = {}
-    for ec in extraction.characters:
-        char = await memory_graph.get_or_create_character(
-            db,
-            name=ec.name,
-            episode_id=episode.id,
-            traits=ec.traits,
-            motivations=ec.motivations,
-            backstory=ec.backstory,
-        )
-        char_name_to_id[ec.name] = char.id
-
-    # Build name→id map for all characters (including pre-existing)
-    all_chars = await memory_graph.get_all_characters(db)
-    full_name_map = {c.name: c.id for c in all_chars}
-
-    # Relationships
-    for er in extraction.relationships:
-        a_id = full_name_map.get(er.character_a_name)
-        b_id = full_name_map.get(er.character_b_name)
-        if a_id and b_id:
-            await memory_graph.add_relationship(
-                db, a_id, b_id, er.type, er.description, episode.id
-            )
-
-    # Calculate global sequence offset
-    all_events = await memory_graph.get_all_timeline_events(db)
-    max_seq = max((e.sequence_order for e in all_events), default=0)
-
-    # Timeline events
-    for et in extraction.timeline_events:
-        char_ids = [
-            full_name_map[name]
-            for name in et.characters_involved
-            if name in full_name_map
-        ]
-        await memory_graph.add_timeline_event(
-            db,
-            episode_id=episode.id,
-            event_description=et.event_description,
-            characters_involved=char_ids,
-            turning_point_type=et.turning_point_type.value if et.turning_point_type else None,
-            sequence_order=max_seq + et.sequence_order,
-        )
-
-    # World rules
-    for ew in extraction.world_rules:
-        await memory_graph.add_world_rule(db, ew.rule, episode.id, ew.category)
-
-    # Promises
-    for ep in extraction.promises:
-        await memory_graph.add_promise(db, ep.description, episode.id, ep.fulfilled)
-
-    # Secrets
-    for es in extraction.secrets:
-        holder_id = full_name_map.get(es.holder_name)
-        if holder_id:
-            await memory_graph.add_secret(
-                db, es.description, holder_id, episode.id, es.revealed
-            )
+    # 2. Extract story elements via the shared memory-graph path
+    await _extract_episode_facts_into_graph(db, episode, body.raw_text)
 
     await db.commit()
-
-    logger.info(
-        "Extraction complete for ep%d: %d chars, %d rels, %d events, %d rules, %d promises, %d secrets",
-        body.number,
-        len(extraction.characters),
-        len(extraction.relationships),
-        len(extraction.timeline_events),
-        len(extraction.world_rules),
-        len(extraction.promises),
-        len(extraction.secrets),
-    )
 
     # Refresh to get created_at
     await db.refresh(episode)
@@ -255,7 +460,10 @@ async def get_episode_issues(
         raise HTTPException(status_code=404, detail="Episode not found")
 
     issues = await memory_graph.get_issues_for_episode(db, episode_id)
-    return [ValidationIssueSchema.model_validate(i) for i in issues]
+    episode_text = await _latest_episode_text(db, episode)
+    response = await _issues_to_schemas(db, issues, episode, episode_text)
+    await db.commit()
+    return response
 
 
 @app.post(
@@ -276,32 +484,16 @@ async def validate_episode_endpoint(
 
     # 1. Run deterministic validation
     findings = await validate_episode(db, episode_id)
+    episode_text = await _latest_episode_text(db, episode)
 
     if not findings:
+        # Passing episodes close the memory loop for future validations.
+        await _rebuild_story_memory_graph(db)
+        await db.commit()
         logger.info("No issues found for episode %d", episode_id)
         return []
 
-    # 2. Generate explanations for each finding
-    explanations = await explain_findings(findings, episode.number)
-
-    # 3. Persist as ValidationIssues
-    issues: list[models.ValidationIssue] = []
-    for finding, explanation in zip(findings, explanations):
-        issue = models.ValidationIssue(
-            id=str(uuid.uuid4()),
-            episode_id=episode_id,
-            category=finding.category.value,
-            status=finding.status.value,
-            problem=explanation.problem,
-            evidence=[e.model_dump() for e in finding.evidence],
-            reasoning=explanation.reasoning,
-            impact=explanation.impact,
-            suggested_fixes=explanation.suggested_fixes,
-            persona_tag=explanation.persona_tag,
-            resolved=False,
-        )
-        db.add(issue)
-        issues.append(issue)
+    issues = await _persist_validation_findings(db, episode, episode_text, findings)
 
     await db.commit()
 
@@ -309,7 +501,9 @@ async def validate_episode_endpoint(
         "Validation of episode %d produced %d issues", episode_id, len(issues)
     )
 
-    return [ValidationIssueSchema.model_validate(i) for i in issues]
+    return await _issues_to_schemas(
+        db, issues, episode, episode_text, ensure_variants=False
+    )
 
 
 @app.post(
@@ -331,44 +525,27 @@ async def revalidate_episode(
 
     # Get old issues for comparison
     old_issues = await memory_graph.get_issues_for_episode(db, episode_id)
-    old_summaries = {i.problem for i in old_issues}
-
-    # Clear old issues
-    await memory_graph.clear_issues_for_episode(db, episode_id)
 
     # Re-run validation
     findings = await validate_episode(db, episode_id)
+    episode_text = await _latest_episode_text(db, episode)
 
     if not findings:
-        # All issues resolved!
+        # All current issues resolved; close the memory loop.
+        _mark_unresolved_issues_resolved(
+            old_issues,
+            "Re-validation passed; issue no longer appears in the current episode text.",
+        )
+        await _rebuild_story_memory_graph(db)
         await db.commit()
         logger.info("Re-validation: all issues resolved for episode %d", episode_id)
         return []
 
-    # Generate explanations
-    explanations = await explain_findings(findings, episode.number)
-
-    # Persist new issues
-    issues: list[models.ValidationIssue] = []
-    for finding, explanation in zip(findings, explanations):
-        # Check if this was a previously known issue
-        was_known = explanation.problem in old_summaries
-
-        issue = models.ValidationIssue(
-            id=str(uuid.uuid4()),
-            episode_id=episode_id,
-            category=finding.category.value,
-            status=finding.status.value,
-            problem=explanation.problem,
-            evidence=[e.model_dump() for e in finding.evidence],
-            reasoning=explanation.reasoning,
-            impact=explanation.impact,
-            suggested_fixes=explanation.suggested_fixes,
-            persona_tag=explanation.persona_tag,
-            resolved=False,
-        )
-        db.add(issue)
-        issues.append(issue)
+    _mark_unresolved_issues_resolved(
+        old_issues,
+        "Re-validation produced a new issue set; this prior issue was superseded.",
+    )
+    issues = await _persist_validation_findings(db, episode, episode_text, findings)
 
     await db.commit()
 
@@ -379,7 +556,9 @@ async def revalidate_episode(
         len(old_issues),
     )
 
-    return [ValidationIssueSchema.model_validate(i) for i in issues]
+    return await _issues_to_schemas(
+        db, issues, episode, episode_text, ensure_variants=False
+    )
 
 
 # ---------------------------------------------------------------------------
