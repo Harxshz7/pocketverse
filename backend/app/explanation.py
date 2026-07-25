@@ -20,6 +20,7 @@ from .schemas import ExplanationOutput, ValidationFinding, ExplanationBatchOutpu
 from .token_logger import log_usage
 
 logger = logging.getLogger("pocketverse.explanation")
+OPENAI_TIMEOUT_SECONDS = 30.0
 
 _EXPLANATION_BATCH_SCHEMA = {
     "type": "object",
@@ -75,6 +76,36 @@ Be direct and professional. These are working creators under deadline — don't 
 Ensure your output array length exactly matches the input findings array length, in the exact same order."""
 
 
+def _local_explanation(finding: ValidationFinding) -> ExplanationOutput:
+    """Build a deterministic explanation when the model provider is unavailable."""
+    evidence_text = "; ".join(
+        f"Episode {item.episode_number}: {item.relevance}"
+        for item in finding.evidence[:3]
+    )
+    details = finding.details or {}
+    missing = details.get("missing")
+    reasoning_parts = [finding.summary]
+    if evidence_text:
+        reasoning_parts.append(f"Evidence: {evidence_text}")
+    if missing:
+        reasoning_parts.append(f"Missing story support: {missing}.")
+
+    return ExplanationOutput(
+        problem=finding.summary,
+        reasoning=" ".join(reasoning_parts),
+        impact=(
+            "This can weaken continuity because the audience is asked to accept "
+            "a story-state change without enough supporting setup or payoff."
+        ),
+        suggested_fixes=[
+            "Add or revise a scene that explicitly motivates the changed story state.",
+            "Adjust the conflicting line so it matches the established memory.",
+            "Introduce a clear transition event before this moment.",
+        ],
+        persona_tag="Editor",
+    )
+
+
 async def explain_findings(
     findings: list[ValidationFinding],
     episode_number: int,
@@ -92,19 +123,13 @@ async def explain_findings(
         return []
 
     if not settings.OPENAI_API_KEY:
-        logger.warning("No OPENAI_API_KEY set — returning placeholder explanations")
-        return [
-            ExplanationOutput(
-                problem=f.summary,
-                reasoning="Unable to generate detailed reasoning (no API key configured).",
-                impact="This issue could affect story continuity and audience immersion.",
-                suggested_fixes=["Review and address the flagged inconsistency."],
-                persona_tag="Editor"
-            )
-            for f in findings
-        ]
+        logger.warning("No OPENAI_API_KEY set; using deterministic explanations")
+        return [_local_explanation(finding) for finding in findings]
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
 
     # Build the user message with the list of structured findings
     user_content = json.dumps(
@@ -125,22 +150,26 @@ async def explain_findings(
         indent=2,
     )
 
-    response = await client.chat.completions.create(
-        model=settings.MODEL_NAME,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "explanation_batch_output",
-                "strict": True,
-                "schema": _EXPLANATION_BATCH_SCHEMA,
+    try:
+        response = await client.chat.completions.create(
+            model=settings.MODEL_NAME,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "explanation_batch_output",
+                    "strict": True,
+                    "schema": _EXPLANATION_BATCH_SCHEMA,
+                },
             },
-        },
-        temperature=0.3,
-    )
+            temperature=0.3,
+        )
+    except Exception:
+        logger.exception("OpenAI explanation request failed; using deterministic output")
+        return [_local_explanation(finding) for finding in findings]
 
     # Log token usage
     usage = response.usage

@@ -18,6 +18,7 @@ from .token_logger import log_usage
 logger = logging.getLogger("pocketverse.rewrites")
 
 REWRITE_MODEL = "gpt-4.1-mini"
+OPENAI_TIMEOUT_SECONDS = 30.0
 
 _REWRITE_VARIANT_SCHEMA = {
     "type": "object",
@@ -88,10 +89,13 @@ async def generate_rewrite_variants(
 ) -> list[RewriteVariantOutput]:
     """Generate 3-4 rewrite variants for one exact issue span."""
     if not settings.OPENAI_API_KEY:
-        logger.warning("No OPENAI_API_KEY set — no rewrite variants generated")
+        logger.warning("No OPENAI_API_KEY set; no rewrite variants generated")
         return []
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
 
     # Keep prompt bounded; the exact span and issue details carry the contract.
     episode_context = episode_text[:8_000]
@@ -119,22 +123,26 @@ async def generate_rewrite_variants(
         indent=2,
     )
 
-    response = await client.chat.completions.create(
-        model=REWRITE_MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "rewrite_variant_batch",
-                "strict": True,
-                "schema": _REWRITE_VARIANT_SCHEMA,
+    try:
+        response = await client.chat.completions.create(
+            model=REWRITE_MODEL,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "rewrite_variant_batch",
+                    "strict": True,
+                    "schema": _REWRITE_VARIANT_SCHEMA,
+                },
             },
-        },
-        temperature=0.4,
-    )
+            temperature=0.4,
+        )
+    except Exception:
+        logger.exception("OpenAI rewrite variant request failed")
+        return []
 
     usage = response.usage
     if usage:
