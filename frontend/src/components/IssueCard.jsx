@@ -37,6 +37,9 @@ export default function IssueCard({
   const variants = issue.rewrite_variants || [];
   const selectedDecision = issue.patch_decision;
   const isRewriteEligible = ['critical', 'needs_review'].includes(issue.status);
+  const acceptedVariantId = selectedDecision?.action === 'accept_variant'
+    ? selectedDecision.variant_db_id
+    : null;
 
   return (
     <div
@@ -169,6 +172,7 @@ export default function IssueCard({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {variants.map((variant) => {
                     const selected = selectedDecision?.variant_db_id === variant.id;
+                    const disabledByOtherSelection = Boolean(acceptedVariantId && !selected);
                     return (
                       <div
                         key={variant.id}
@@ -199,11 +203,14 @@ export default function IssueCard({
                             e.stopPropagation();
                             onPatchDecision?.(issue.id, 'accept_variant', variant.variant_id);
                           }}
-                          disabled={decisionLoading || selected}
-                          className="btn-secondary !py-2 !px-3 text-xs"
+                          disabled={decisionLoading || selected || disabledByOtherSelection}
+                          className={`
+                            !py-2 !px-3 text-xs
+                            ${selected ? 'btn-primary' : 'btn-secondary'}
+                          `}
                         >
                           <CheckCircle2 size={13} />
-                          Accept {variant.variant_id}
+                          {selected ? `Accepted ${variant.variant_id}` : `Accept ${variant.variant_id}`}
                         </button>
                       </div>
                     );
@@ -220,7 +227,7 @@ export default function IssueCard({
                     e.stopPropagation();
                     onPatchDecision?.(issue.id, 'keep_original');
                   }}
-                  disabled={decisionLoading || selectedDecision?.action === 'keep_original'}
+                  disabled={decisionLoading || selectedDecision?.action === 'keep_original' || Boolean(acceptedVariantId)}
                   className="btn-secondary !py-2 !px-3 text-xs"
                 >
                   <XCircle size={13} />

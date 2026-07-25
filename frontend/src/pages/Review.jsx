@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, CheckCircle2, Filter, Shield, ShieldAlert, Siren } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  Filter,
+  Shield,
+  ShieldAlert,
+  Siren,
+} from 'lucide-react';
 import IssueCard from '../components/IssueCard';
 import LoadingState from '../components/LoadingState';
 import CinematicScene from '../components/CinematicScene';
@@ -34,6 +42,7 @@ export default function Review() {
   const [decisionLoadingId, setDecisionLoadingId] = useState(null);
   const [finalLoadingEpisodeId, setFinalLoadingEpisodeId] = useState(null);
   const [finalNotice, setFinalNotice] = useState(null);
+  const [finalPreview, setFinalPreview] = useState(null);
 
   const fetchIssues = useCallback(async () => {
     setLoading(true);
@@ -76,7 +85,7 @@ export default function Review() {
     setFinalNotice(null);
     setError(null);
     try {
-      const result = await generateFinalVersion(episodeId);
+      const result = await generateFinalVersion(episodeId, issues);
       setIssues((prev) => [
         ...prev.filter((issue) => issue.episode_id !== episodeId),
         ...result.issues,
@@ -84,6 +93,10 @@ export default function Review() {
       setFinalNotice(
         `Episode ${episodeId} final v${result.version.version_number} generated: ${result.resolved_count} resolved, ${result.remaining_count} remaining.`
       );
+      setFinalPreview({
+        episodeId,
+        ...result,
+      });
     } catch (err) {
       setError(err.message || 'Failed to generate final version');
     } finally {
@@ -120,6 +133,14 @@ export default function Review() {
         .map((issue) => issue.episode_id)
     ),
   ];
+  const acceptedPatchesForPreview = finalPreview
+    ? issues.filter((issue) =>
+        issue.episode_id === finalPreview.episodeId
+        && issue.patch_decision?.action === 'accept_variant'
+        && issue.patch_decision?.original_span
+        && issue.patch_decision?.rewritten_text
+      )
+    : [];
 
   return (
     <div className="page-shell space-y-6">
@@ -238,6 +259,82 @@ export default function Review() {
           </div>
         )}
       </section>
+
+      {finalPreview && (
+        <section className="glass-panel p-4 md:p-5 space-y-5 animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="feature-card-icon !w-10 !h-10 !rounded-xl">
+                <FileText size={18} />
+              </div>
+              <div>
+                <h2 className="heading-md text-verse-text">
+                  Final Version Preview / EP{finalPreview.episodeId} v{finalPreview.version.version_number}
+                </h2>
+                <p className="text-sm text-verse-text-muted mt-1">
+                  Before/after view of accepted patches. Original text is preserved separately.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1 rounded-full bg-verse-green-dim border border-verse-green/20 text-verse-green text-xs mono">
+                {finalPreview.resolved_count} resolved
+              </span>
+              <span className="px-3 py-1 rounded-full bg-verse-black border border-verse-border text-verse-text-muted text-xs mono">
+                {finalPreview.remaining_count} remaining
+              </span>
+            </div>
+          </div>
+
+          {acceptedPatchesForPreview.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono">
+                Accepted Patch Diff
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {acceptedPatchesForPreview.map((issue) => (
+                  <div key={issue.id} className="glass-panel p-4 space-y-3">
+                    <p className="text-xs mono text-verse-red uppercase tracking-wider">
+                      {issue.category.replace(/_/g, ' ')}
+                    </p>
+                    <div className="space-y-2">
+                      <p className="text-xs text-verse-text-muted uppercase mono">Original</p>
+                      <p className="text-sm text-verse-text-secondary leading-relaxed border-l-2 border-verse-red/40 pl-3">
+                        {issue.patch_decision.original_span}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs text-verse-green uppercase mono">Accepted Rewrite</p>
+                      <p className="text-sm text-verse-text leading-relaxed border-l-2 border-verse-green/50 pl-3">
+                        {issue.patch_decision.rewritten_text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold tracking-wider text-verse-text-muted uppercase mono">
+                Original Episode
+              </h3>
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl bg-verse-black/70 border border-verse-border p-4 text-sm leading-relaxed text-verse-text-secondary">
+                {finalPreview.original_text || 'Original episode text is not available in mock mode.'}
+              </pre>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold tracking-wider text-verse-green uppercase mono">
+                Final Episode Version
+              </h3>
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl bg-verse-black/70 border border-verse-green/20 p-4 text-sm leading-relaxed text-verse-text">
+                {finalPreview.final_text || 'Final episode text is not available in mock mode.'}
+              </pre>
+            </div>
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <LoadingState type="skeleton" />

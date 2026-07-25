@@ -27,26 +27,46 @@ function buildMockPatchDecision(issueId, action, variantId = null) {
   };
 }
 
-function buildMockFinalVersion(episodeId) {
-  const episodeIssues = mockIssues.filter(i => i.episode_id === episodeId);
+function applyMockAcceptedPatches(originalText, episodeIssues) {
+  let finalText = originalText;
+  const accepted = episodeIssues
+    .map(issue => issue.patch_decision)
+    .filter(decision =>
+      decision?.action === 'accept_variant'
+      && decision.original_span
+      && decision.rewritten_text
+    );
+
+  for (const decision of accepted) {
+    finalText = finalText.replace(decision.original_span, decision.rewritten_text);
+  }
+  return finalText;
+}
+
+function buildMockFinalVersion(episodeId, currentIssues = mockIssues) {
+  const currentEpisodeIssues = currentIssues.filter(i => i.episode_id === episodeId);
+  const episode = mockEpisodes.find(e => e.id === episodeId);
+  const originalText = episode?.raw_text || '';
+  const finalText = applyMockAcceptedPatches(originalText, currentEpisodeIssues);
+
   return {
     version: {
       id: Date.now(),
       episode_id: episodeId,
       version_number: 1,
-      raw_text: '',
+      raw_text: finalText,
       source: 'accepted_patches',
       validation_status: 'passed',
       created_at: new Date().toISOString(),
     },
-    original_text: '',
-    final_text: '',
-    issues: episodeIssues.map(i => ({
+    original_text: originalText,
+    final_text: finalText,
+    issues: currentEpisodeIssues.map(i => ({
       ...i,
       resolved: true,
       resolved_evidence: 'Final version generated from accepted patches.',
     })),
-    resolved_count: episodeIssues.length,
+    resolved_count: currentEpisodeIssues.length,
     remaining_count: 0,
   };
 }
@@ -244,7 +264,7 @@ export async function recordPatchDecision(issueId, action, variantId = null) {
   }
 }
 
-export async function generateFinalVersion(episodeId) {
+export async function generateFinalVersion(episodeId, currentIssues = null) {
   try {
     return await request(`/episodes/${episodeId}/final-version`, {
       method: 'POST',
@@ -254,7 +274,7 @@ export async function generateFinalVersion(episodeId) {
     if (err.isNetworkError || (hasMockIssues && isNotFoundError(err))) {
       console.warn('[API] Using mock final version generation');
       await new Promise(r => setTimeout(r, 1500));
-      return buildMockFinalVersion(episodeId);
+      return buildMockFinalVersion(episodeId, currentIssues || mockIssues);
     }
     throw err;
   }
