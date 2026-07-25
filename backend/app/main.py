@@ -365,7 +365,8 @@ app.add_middleware(
 )
 
 register_error_handlers(app)
-app.include_router(api_v1_router, prefix="/api/v1")
+# FastAPI 0.140 keeps include_router entries deferred; the v1 router owns its prefix.
+app.router.routes.extend(api_v1_router.routes)
 
 
 @app.on_event("startup")
