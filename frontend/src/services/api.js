@@ -7,6 +7,50 @@ import { mockEpisodes, mockStoryMemory, mockIssues } from '../data/mockData';
 
 const BASE_URL = '/api/v1';
 
+function isNotFoundError(err) {
+  return err.message === 'Not Found'
+    || err.message === 'Issue not found'
+    || err.message === 'Rewrite variant not found';
+}
+
+function buildMockPatchDecision(issueId, action, variantId = null) {
+  const issue = mockIssues.find(i => i.id === issueId);
+  const variant = issue?.rewrite_variants?.find(v => v.variant_id === variantId);
+  return {
+    id: Date.now(),
+    episode_id: issue?.episode_id,
+    issue_id: issueId,
+    action,
+    variant_db_id: variant?.id || null,
+    original_span: variant?.original_span || null,
+    rewritten_text: variant?.rewritten_text || null,
+  };
+}
+
+function buildMockFinalVersion(episodeId) {
+  const episodeIssues = mockIssues.filter(i => i.episode_id === episodeId);
+  return {
+    version: {
+      id: Date.now(),
+      episode_id: episodeId,
+      version_number: 1,
+      raw_text: '',
+      source: 'accepted_patches',
+      validation_status: 'passed',
+      created_at: new Date().toISOString(),
+    },
+    original_text: '',
+    final_text: '',
+    issues: episodeIssues.map(i => ({
+      ...i,
+      resolved: true,
+      resolved_evidence: 'Final version generated from accepted patches.',
+    })),
+    resolved_count: episodeIssues.length,
+    remaining_count: 0,
+  };
+}
+
 async function request(path, options = {}) {
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -191,19 +235,10 @@ export async function recordPatchDecision(issueId, action, variantId = null) {
       body: JSON.stringify({ action, variant_id: variantId }),
     });
   } catch (err) {
-    if (err.isNetworkError) {
-      console.warn('[API] Backend offline — simulating patch decision');
-      const issue = mockIssues.find(i => i.id === issueId);
-      const variant = issue?.rewrite_variants?.find(v => v.variant_id === variantId);
-      return {
-        id: Date.now(),
-        episode_id: issue?.episode_id,
-        issue_id: issueId,
-        action,
-        variant_db_id: variant?.id || null,
-        original_span: variant?.original_span || null,
-        rewritten_text: variant?.rewritten_text || null,
-      };
+    const isMockIssue = mockIssues.some(i => i.id === issueId);
+    if (err.isNetworkError || (isMockIssue && isNotFoundError(err))) {
+      console.warn('[API] Using mock patch decision');
+      return buildMockPatchDecision(issueId, action, variantId);
     }
     throw err;
   }
@@ -215,30 +250,11 @@ export async function generateFinalVersion(episodeId) {
       method: 'POST',
     });
   } catch (err) {
-    if (err.isNetworkError) {
-      console.warn('[API] Backend offline — simulating final version generation');
+    const hasMockIssues = mockIssues.some(i => i.episode_id === episodeId);
+    if (err.isNetworkError || (hasMockIssues && isNotFoundError(err))) {
+      console.warn('[API] Using mock final version generation');
       await new Promise(r => setTimeout(r, 1500));
-      const episodeIssues = mockIssues.filter(i => i.episode_id === episodeId);
-      return {
-        version: {
-          id: Date.now(),
-          episode_id: episodeId,
-          version_number: 1,
-          raw_text: '',
-          source: 'accepted_patches',
-          validation_status: 'passed',
-          created_at: new Date().toISOString(),
-        },
-        original_text: '',
-        final_text: '',
-        issues: episodeIssues.map(i => ({
-          ...i,
-          resolved: true,
-          resolved_evidence: 'Final version generated from accepted patches.',
-        })),
-        resolved_count: episodeIssues.length,
-        remaining_count: 0,
-      };
+      return buildMockFinalVersion(episodeId);
     }
     throw err;
   }
