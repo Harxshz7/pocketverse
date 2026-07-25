@@ -44,7 +44,7 @@ export default function IssueCard({ issue, onResolve }) {
   return (
     <div
       className={`
-        card overflow-hidden transition-all duration-500
+        card issue-card-premium overflow-hidden transition-all duration-500
         ${resolving ? 'animate-resolve' : ''}
         ${resolved ? 'border-verse-green/30 shadow-[0_0_20px_rgba(45,212,160,0.1)]' : ''}
         ${!resolved && issue.status === 'critical' ? 'border-verse-red/30' : ''}
@@ -93,6 +93,10 @@ export default function IssueCard({ issue, onResolve }) {
                 </span>
               </>
             )}
+            <span className="text-verse-text-muted/50">•</span>
+            <span className="text-verse-text-muted text-xs mono uppercase tracking-wider">
+              {issue.evidence.length} evidence
+            </span>
           </div>
           <p className={`
             text-sm leading-relaxed

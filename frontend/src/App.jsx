@@ -8,7 +8,7 @@ import Review from './pages/Review';
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-verse-black">
+      <div className="min-h-screen">
         <Navbar />
         <main>
           <Routes>

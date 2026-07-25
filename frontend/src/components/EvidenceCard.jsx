@@ -2,7 +2,7 @@ import { FileText, Quote } from 'lucide-react';
 
 export default function EvidenceCard({ evidence }) {
   return (
-    <div className="bg-verse-black/60 border border-verse-border/60 rounded-lg p-4 space-y-3">
+    <div className="glass-panel p-4 space-y-3">
       {/* Episode reference */}
       <div className="flex items-center gap-2 text-sm">
         <FileText size={14} className="text-verse-red shrink-0" />

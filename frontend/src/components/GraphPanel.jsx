@@ -43,7 +43,7 @@ function SectionHeader({ icon: Icon, title, count }) {
 
 function CharacterCard({ character }) {
   return (
-    <div className="card p-4 space-y-2.5">
+    <div className="glass-panel p-4 space-y-2.5 hover:border-verse-red/30 transition-colors">
       <div className="flex items-center justify-between">
         <h4 className="font-semibold text-verse-text">{character.name}</h4>
         <span className="text-xs mono text-verse-text-muted">
@@ -80,7 +80,7 @@ function TimelineItem({ event }) {
     <div className="flex gap-3 group">
       <div className="flex flex-col items-center">
         <div className={`
-          w-2.5 h-2.5 rounded-full mt-1.5 shrink-0
+          w-3 h-3 rounded-full mt-1.5 shrink-0 border border-verse-black
           ${event.turning_point_type
             ? 'bg-verse-red shadow-[0_0_8px_rgba(232,32,63,0.4)]'
             : 'bg-verse-border group-hover:bg-verse-text-muted'
@@ -122,40 +122,44 @@ export default function GraphPanel({ storyMemory }) {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Characters */}
-      <section>
-        <SectionHeader icon={Users} title="Characters" count={characters.length} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {characters.map((c) => (
-            <CharacterCard key={c.id} character={c} />
-          ))}
-        </div>
-      </section>
+      <div className="memory-board">
+        {/* Characters */}
+        <section className="glass-panel p-5">
+          <SectionHeader icon={Users} title="Characters" count={characters.length} />
+          <div className="grid grid-cols-1 gap-3">
+            {characters.map((c) => (
+              <CharacterCard key={c.id} character={c} />
+            ))}
+          </div>
+        </section>
 
-      {/* Timeline */}
-      <section>
-        <SectionHeader icon={Clock} title="Timeline" count={timeline_events.length} />
-        <div className="card p-5">
-          {timeline_events.map((e) => (
-            <TimelineItem key={e.id} event={e} />
-          ))}
-        </div>
-      </section>
+        {/* Timeline */}
+        <section className="timeline-card p-5">
+          <SectionHeader icon={Clock} title="Timeline" count={timeline_events.length} />
+          <div className="relative z-10">
+            {timeline_events.map((e) => (
+              <TimelineItem key={e.id} event={e} />
+            ))}
+          </div>
+        </section>
+      </div>
 
       {/* Relationships */}
       <section>
         <SectionHeader icon={GitBranch} title="Relationships" count={relationships.length} />
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {relationships.map((r) => (
-            <div key={r.id} className="card p-4 flex items-center gap-3">
-              <span className="text-verse-text font-medium text-sm">{r.character_a_name}</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-verse-red-dim text-verse-red text-xs mono font-bold">
-                {r.type}
-              </span>
-              <span className="text-verse-text font-medium text-sm">{r.character_b_name}</span>
-              <span className="ml-auto text-xs text-verse-text-muted hidden md:block">
+            <div key={r.id} className="glass-panel p-4 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-verse-text font-medium text-sm">{r.character_a_name}</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-verse-red-dim text-verse-red text-xs mono font-bold border border-verse-red/20">
+                  {r.type}
+                </span>
+                <span className="text-verse-text font-medium text-sm">{r.character_b_name}</span>
+              </div>
+              <p className="text-xs text-verse-text-muted leading-relaxed">
                 {r.description}
-              </span>
+              </p>
             </div>
           ))}
         </div>
@@ -165,9 +169,9 @@ export default function GraphPanel({ storyMemory }) {
       {world_rules.length > 0 && (
         <section>
           <SectionHeader icon={Globe} title="World Rules" count={world_rules.length} />
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {world_rules.map((r) => (
-              <div key={r.id} className="card p-4 flex items-start gap-3">
+              <div key={r.id} className="glass-panel p-4 flex items-start gap-3">
                 <Zap size={14} className="text-verse-amber mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm text-verse-text">{r.rule}</p>
@@ -188,7 +192,7 @@ export default function GraphPanel({ storyMemory }) {
             <SectionHeader icon={Sparkles} title="Promises" count={promises.length} />
             <div className="space-y-2">
               {promises.map((p) => (
-                <div key={p.id} className="card p-4 flex items-start gap-3">
+                <div key={p.id} className="glass-panel p-4 flex items-start gap-3">
                   <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${p.fulfilled ? 'bg-verse-green' : 'bg-verse-amber animate-pulse-glow'}`} />
                   <div>
                     <p className={`text-sm ${p.fulfilled ? 'text-verse-text-muted line-through' : 'text-verse-text'}`}>
@@ -210,7 +214,7 @@ export default function GraphPanel({ storyMemory }) {
             <SectionHeader icon={Lock} title="Secrets" count={secrets.length} />
             <div className="space-y-2">
               {secrets.map((s) => (
-                <div key={s.id} className="card p-4 flex items-start gap-3">
+                <div key={s.id} className="glass-panel p-4 flex items-start gap-3">
                   <Lock size={14} className={`mt-0.5 shrink-0 ${s.revealed ? 'text-verse-text-muted' : 'text-verse-red'}`} />
                   <div>
                     <p className={`text-sm ${s.revealed ? 'text-verse-text-muted' : 'text-verse-text'}`}>
