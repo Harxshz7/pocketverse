@@ -134,6 +134,7 @@ export default function Dashboard() {
   const [savingEpisode, setSavingEpisode] = useState(false);
   const [decisionLoadingId, setDecisionLoadingId] = useState(null);
   const [finalLoading, setFinalLoading] = useState(false);
+  const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const [error, setError] = useState('');
 
   const loadEpisodes = useCallback(async () => {
@@ -159,6 +160,7 @@ export default function Dashboard() {
     if (!selectedEpisodeId) {
       setSelectedEpisode(null);
       setIssues([]);
+      setAnalysisCompleted(false);
       return;
     }
 
@@ -175,6 +177,7 @@ export default function Dashboard() {
         if (!cancelled) {
           setSelectedEpisode(episode);
           setIssues(episodeIssues);
+          setAnalysisCompleted(episodeIssues.length > 0);
         }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Failed to load selected episode');
@@ -187,6 +190,10 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
+  }, [selectedEpisodeId]);
+
+  useEffect(() => {
+    setAnalysisCompleted(false);
   }, [selectedEpisodeId]);
 
   const stats = useMemo(() => ({
@@ -223,6 +230,7 @@ export default function Dashboard() {
     try {
       const result = await validateEpisode(selectedEpisodeId);
       setIssues(result);
+      setAnalysisCompleted(true);
     } catch (err) {
       setError(err.message || 'Failed to analyze episode');
     } finally {
@@ -387,7 +395,7 @@ export default function Dashboard() {
                     <div className="flex flex-wrap gap-2">
                       <button onClick={handleAnalyze} disabled={analyzing} className="btn-primary">
                         {analyzing ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                        {analyzing ? 'Analyzing...' : 'Analyze Episode'}
+                        {analyzing ? 'Analyzing...' : analysisCompleted ? 'Re-run Analysis' : 'Analyze Episode'}
                       </button>
                       <button
                         onClick={handleGenerateFinal}
@@ -423,9 +431,15 @@ export default function Dashboard() {
                   {issues.length === 0 ? (
                     <div className="glass-panel p-8 text-center space-y-3">
                       <CheckCircle2 size={36} className="text-verse-green mx-auto" />
-                      <p className="text-verse-text font-semibold">No issues loaded for this episode.</p>
+                      <p className="text-verse-text font-semibold">
+                        {analysisCompleted
+                          ? 'Analysis completed. No continuity issues found.'
+                          : 'No issues loaded for this episode.'}
+                      </p>
                       <p className="text-sm text-verse-text-muted">
-                        Run analysis to validate continuity against the story memory graph.
+                        {analysisCompleted
+                          ? 'The current episode matches the persisted story memory checks.'
+                          : 'Run analysis to validate continuity against the story memory graph.'}
                       </p>
                     </div>
                   ) : (

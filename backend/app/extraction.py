@@ -29,6 +29,7 @@ from .schemas import (
 from .token_logger import log_usage
 
 logger = logging.getLogger("pocketverse.extraction")
+OPENAI_TIMEOUT_SECONDS = 30.0
 
 # The JSON schema the LLM must conform to — matches ExtractionResult
 _EXTRACTION_SCHEMA = {
@@ -201,10 +202,13 @@ async def extract_story_elements(
         ExtractionResult with all extracted elements.
     """
     if not settings.OPENAI_API_KEY:
-        logger.warning("No OPENAI_API_KEY set — returning empty extraction")
+        logger.warning("No OPENAI_API_KEY set; returning empty extraction")
         return ExtractionResult()
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
 
     user_content = f"Episode {episode_number}:\n\n{episode_text}"
     if existing_characters:
@@ -213,22 +217,26 @@ async def extract_story_elements(
             "Mark these as is_new=false if they appear in this episode."
         )
 
-    response = await client.chat.completions.create(
-        model=settings.MODEL_NAME,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "extraction_result",
-                "strict": True,
-                "schema": _EXTRACTION_SCHEMA,
+    try:
+        response = await client.chat.completions.create(
+            model=settings.MODEL_NAME,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "extraction_result",
+                    "strict": True,
+                    "schema": _EXTRACTION_SCHEMA,
+                },
             },
-        },
-        temperature=0.1,
-    )
+            temperature=0.1,
+        )
+    except Exception:
+        logger.exception("OpenAI extraction request failed; returning empty extraction")
+        return ExtractionResult()
 
     # Log token usage
     usage = response.usage
